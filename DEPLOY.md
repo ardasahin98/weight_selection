@@ -1,12 +1,12 @@
 # Deploying the weight elicitation site
 
-Project: **weightwebsite** · Firestore collection: **elicitations**
+Project: **weightwebsite** · Firestore collection: **elicitations** · Hosting: **Vercel**
 
 ---
 
-## 1. Enable two things in the Firebase console
+## 1. Enable three things in the Firebase console
 
-Both are one-time, and the site will not work without them.
+All one-time, and the site will not work without them.
 
 **Firestore** — Build → Firestore Database → Create database → **Native mode** →
 region `us-west1` (permanent choice; pick the one nearest the panel).
@@ -17,33 +17,55 @@ region `us-west1` (permanent choice; pick the one nearest the panel).
 If anonymous sign-in is off, the chip in the top right of the site reads
 "Not connected" and the console shows `auth/configuration-not-found`.
 
-## 2. Install the CLI
+**Authorized domains** — Build → Authentication → Settings → **Authorized domains**
+→ Add domain. Add the Vercel production domain (e.g. `weight-website.vercel.app`)
+and any custom domain.
+
+Anonymous sign-in refuses to run on an origin Firebase does not know. Without
+this the site loads but the chip reads "Not connected" and the console shows
+`auth/unauthorized-domain`.
+
+Vercel gives every preview deployment its own URL, and those will *not* be
+authorized. Send the panel the stable production URL, not a preview link.
+
+## 2. Publish the security rules
+
+The site is hosted on Vercel, but Firestore rules still live in Firebase. Either
+paste `firestore.rules` into the console (Firestore Database → **Rules** →
+Publish), or from this folder:
 
 ```bash
 npm install -g firebase-tools
 firebase login
+firebase deploy --only firestore:rules
 ```
 
-## 3. Deploy
+**This is not optional.** Firestore's default rules are either locked (every
+write denied — nothing ever saves) or test mode (open to the world, then expires
+after 30 days and breaks mid-study). Neither is what you want.
 
-From this folder:
+## 3. Deploy the site
 
-```bash
-firebase deploy --only firestore:rules,hosting
-```
+Vercel deploys the repo as a static site — no build step, no framework preset.
+Push to the connected branch and it goes live.
 
-That publishes the security rules and the site. The URL will be
-`https://weightwebsite.web.app` — that is the link you send the panel.
+`.vercelignore` keeps the admin files off the public site. The one that matters
+is `serviceAccountKey.json`: it bypasses the security rules entirely, so it must
+never be served.
 
-To test locally before deploying:
-
-```bash
-firebase serve
-```
+To test locally, run any static server from this folder — for example
+`python3 -m http.server 8000` — and open `http://localhost:8000`. Add
+`localhost` to Authorized domains so sign-in works there too.
 
 Do **not** just double-click `index.html`. The Firebase SDK cannot run from a
 `file://` URL, so autosave will be off — the questionnaire still works, but the
 chip will read "Local only" and answers exist only until the tab closes.
+
+## A note on the collection
+
+You do not create the `elicitations` collection by hand. Firestore creates it
+when the first document is written. Its appearance in the console is your
+confirmation that saving works end to end.
 
 ---
 
@@ -88,8 +110,8 @@ This needs a service account key — Project settings → Service accounts →
 Generate new private key → save as `serviceAccountKey.json` in this folder.
 
 **That key bypasses the security rules.** Keep it out of git, and never let it
-reach the `public` folder that gets deployed. `firebase.json` already ignores
-`export_responses.js`, but the key file is yours to protect.
+reach the `public` folder that gets deployed. `.vercelignore` already keeps it out of the
+deployment, but the key file is yours to protect — do not commit it.
 
 ## Security
 
@@ -107,7 +129,9 @@ project; it does not grant access to it. The rules are what protect the data.
 |---|---|---|
 | Chip reads "Local only" | Opened as a `file://` URL | Use the hosted link or `firebase serve` |
 | Chip reads "Not connected", console says `auth/configuration-not-found` | Anonymous sign-in not enabled | Step 1 above |
-| Chip reads "Not connected", console says `auth/unauthorized-domain` | Serving from a domain Firebase doesn't know | Authentication → Settings → Authorized domains → add it |
+| Chip reads "Not connected", console says `auth/unauthorized-domain` | Serving from a domain Firebase doesn't know | Authentication → Settings → Authorized domains → add the Vercel domain |
+| No `elicitations` collection appears | No write has succeeded yet — almost always the rules | Publish `firestore.rules` (step 2) |
+| Logic tree image missing on the deployed site but fine locally | Filename case mismatch — macOS ignores case, Linux does not | Make the `src` in `index.html` match the file exactly |
 | Chip reads "Not saved" | Rules rejected the write | Confirm the rules deployed: `firebase deploy --only firestore:rules` |
 
 In every one of these the questionnaire keeps working and the download buttons

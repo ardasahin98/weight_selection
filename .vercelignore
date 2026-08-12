@@ -1,0 +1,16 @@
+# Never let these reach the public site.
+#
+# serviceAccountKey.json is the one that matters — it bypasses the Firestore
+# security rules completely. If it is ever served from the site, anyone who
+# finds the URL can read and delete every response.
+
+serviceAccountKey.json
+*serviceAccount*.json
+export_responses.js
+all_responses.csv
+final_responses.csv
+DEPLOY.md
+firestore.rules
+firebase.json
+.firebaserc
+node_modules
