@@ -255,7 +255,7 @@ const PANELS = buildSchema();
 const ALL_SETS = PANELS.reduce((acc, p) => acc.concat(p.sets), []);
 
 const state = {
-  respondent: { name: '' },
+  respondent: { name: '', email: '' },
   answers: {},          // setId -> { weights: {branchId: string}, comment: string }
   startedAt: new Date().toISOString(),
   currentPanel: 0,      // 0 = intro, 1..n = generated, n+1 = review
@@ -742,7 +742,7 @@ function toCSV(payload) {
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const rows = [[
-    'respondent_name',
+    'respondent_name', 'respondent_email',
     'set_id', 'section', 'case', 'scenario', 'branch_id', 'branch', 'weight',
     'set_sum', 'set_status', 'comment', 'completed_at'
   ]];
@@ -750,7 +750,7 @@ function toCSV(payload) {
   payload.responses.forEach(res => {
     res.weights.forEach(w => {
       rows.push([
-        r.name,
+        r.name, r.email || '',
         res.setId, res.section, res.case, res.scenario,
         w.branchId, w.branch, w.weight === null ? '' : w.weight,
         res.sum, res.status, res.comment, payload.completedAt
@@ -777,62 +777,50 @@ function safeName() {
 }
 
 /* --------------------------------------------------------------------------
-   DRAFT SAVE / LOAD  (file-based, so nothing is stored in the browser)
+   CLOUD SYNC
    -------------------------------------------------------------------------- */
 
-function saveDraft() {
-  const draft = {
-    draft: true,
-    schemaVersion: CONFIG.version,
-    respondent: state.respondent,
-    answers: state.answers,
-    startedAt: state.startedAt,
-    savedAt: new Date().toISOString()
-  };
-  download(safeName() + '_DRAFT.json', JSON.stringify(draft, null, 2), 'application/json');
+/* The sign-in gate. Shown until authentication completes; hidden entirely when
+   Firebase is not available at all, so the questionnaire still opens offline. */
+function renderGate() {
+  const gate = $('#gate');
+  const layout = $('#layout');
+  const btn = $('#btn-signin');
+  const label = $('#signin-label');
+  const errBox = $('#gate-error');
+  const s = window.LTSync ? window.LTSync.status : 'unavailable';
+
+  const showGate = (s === 'connecting' || s === 'signed-out' || s === 'error');
+  gate.hidden = !showGate;
+  layout.hidden = showGate;
+
+  btn.disabled = (s === 'connecting');
+  label.textContent = (s === 'connecting') ? 'Connecting…' : 'Sign in with Google';
+
+  const msg = (window.LTSync && window.LTSync.error) || '';
+  errBox.hidden = !(s === 'error' && msg);
+  if (!errBox.hidden) errBox.textContent = friendlyAuthError(msg);
+
+  const box = $('#account-box');
+  const acct = window.LTSync && window.LTSync.user;
+  box.hidden = !acct;
+  if (acct) $('#account-email').textContent = acct.email || acct.name || '';
 }
 
-function loadDraft(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    let data;
-    try { data = JSON.parse(reader.result); }
-    catch (err) { alert('That file could not be read as JSON.'); return; }
-
-    const answers = data.answers || null;
-    if (!answers) { alert('That file does not look like a saved draft.'); return; }
-
-    if (data.respondent) {
-      state.respondent.name = data.respondent.name || '';
-      $('#r-name').value = state.respondent.name;
-    }
-    if (data.startedAt) state.startedAt = data.startedAt;
-
-    let restored = 0;
-    ALL_SETS.forEach(set => {
-      const saved = answers[set.id];
-      if (!saved) return;
-      set.branches.forEach(b => {
-        const v = saved.weights && saved.weights[b.id];
-        if (v !== undefined && v !== null) writeWeight(set.id, b.id, v);
-      });
-      state.answers[set.id].comment = saved.comment || '';
-      const ta = document.getElementById('comment-' + set.id);
-      if (ta) ta.value = state.answers[set.id].comment;
-      updateSetStatus(set.id);
-      restored++;
-    });
-
-    renderNav();
-    markDirty();
-    alert('Draft loaded — ' + restored + ' weight sets restored.');
-  };
-  reader.readAsText(file);
+/* Auth failures are opaque by default. These are the two that actually happen,
+   and the fix for each is a console setting rather than anything the
+   respondent can do — so say so plainly. */
+function friendlyAuthError(msg) {
+  if (/unauthorized-domain/.test(msg)) {
+    return 'This site\'s address is not authorised for sign-in yet. Please let the study ' +
+           'coordinator know — it is a one-line setting on their side.';
+  }
+  if (/configuration-not-found|operation-not-allowed/.test(msg)) {
+    return 'Google sign-in is not switched on for this project yet. Please let the study ' +
+           'coordinator know.';
+  }
+  return msg;
 }
-
-/* --------------------------------------------------------------------------
-   ONLINE SUBMISSION — stub for the Firebase version
-   -------------------------------------------------------------------------- */
 
 function syncAvailable() {
   return !!(window.LTSync && window.LTSync.save && window.LTSync.status === 'ready');
@@ -882,6 +870,17 @@ async function flushSave() {
 async function restoreFromCloud() {
   if (!window.LTSync || !window.LTSync.load) return;
 
+  // Seed from the signed-in account, so nobody retypes what Google already knows.
+  const acct = window.LTSync.user;
+  if (acct) {
+    state.respondent.email = acct.email || '';
+    if (!state.respondent.name && acct.name) {
+      state.respondent.name = acct.name;
+      $('#r-name').value = acct.name;
+      $('#name-hint').hidden = false;
+    }
+  }
+
   let data;
   try { data = await window.LTSync.load(); }
   catch (err) { sync.error = err.message; renderSyncStatus(); return; }
@@ -893,6 +892,7 @@ async function restoreFromCloud() {
     state.respondent.name = data.respondent.name;
     $('#r-name').value = data.respondent.name;
   }
+  if (data.respondent && data.respondent.email) state.respondent.email = data.respondent.email;
   if (data.startedAt) state.startedAt = data.startedAt;
   state.submitted = !!data.submitted;
   state.submittedAt = data.submittedAt || null;
@@ -940,7 +940,7 @@ function renderSyncStatus() {
     chip.textContent = 'Not connected';
     chip.title = (window.LTSync.error || '') + ' — your answers are still kept in this page; use the download buttons.';
     chip.classList.add('chip-warn');
-  } else if (s === 'connecting') {
+  } else if (s === 'connecting' || s === 'signed-out') {
     chip.textContent = 'Connecting…';
     chip.classList.add('chip-muted');
   } else if (sync.inFlight) {
@@ -1009,13 +1009,6 @@ function init() {
   bindRespondentFields();
   bindNavButtons();
 
-  $('#btn-save-draft').addEventListener('click', saveDraft);
-  $('#btn-load-draft').addEventListener('click', () => $('#draft-input').click());
-  $('#draft-input').addEventListener('change', e => {
-    if (e.target.files && e.target.files[0]) loadDraft(e.target.files[0]);
-    e.target.value = '';
-  });
-
   $('#btn-export-json').addEventListener('click', () => {
     download(safeName() + '.json', JSON.stringify(collectPayload(), null, 2), 'application/json');
   });
@@ -1026,11 +1019,24 @@ function init() {
 
   // Cloud sync, if firebase-sync.js loaded. It is a module, so it may finish
   // after this classic script — listen rather than poll.
+  $('#btn-signin').addEventListener('click', () => {
+    $('#signin-label').textContent = 'Opening Google…';
+    window.LTSync.signIn();
+  });
+  $('#btn-signout').addEventListener('click', async () => {
+    clearTimeout(sync.timer);
+    if (sync.pending || sync.inFlight) await flushSave();
+    await window.LTSync.signOut();
+    location.reload();
+  });
+
   window.addEventListener('ltsync-status', e => {
+    renderGate();
     renderSyncStatus();
     if (e.detail.status === 'ready') restoreFromCloud();
   });
   if (window.LTSync && window.LTSync.status === 'ready') restoreFromCloud();
+  renderGate();
   renderSyncStatus();
 
   // Last-chance flush if the tab closes inside the debounce window.

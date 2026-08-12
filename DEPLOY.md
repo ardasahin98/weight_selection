@@ -11,11 +11,12 @@ All one-time, and the site will not work without them.
 **Firestore** — Build → Firestore Database → Create database → **Native mode** →
 region `us-west1` (permanent choice; pick the one nearest the panel).
 
-**Anonymous sign-in** — Build → Authentication → Get started → Sign-in method →
-**Anonymous** → Enable.
+**Google sign-in** — Build → Authentication → Get started → Sign-in method →
+**Google** → Enable. It asks for a project support email; your own address is
+fine. Anonymous sign-in is no longer used and can be left off.
 
-If anonymous sign-in is off, the chip in the top right of the site reads
-"Not connected" and the console shows `auth/configuration-not-found`.
+If Google sign-in is off, the sign-in screen shows an error and the console
+says `auth/operation-not-allowed`.
 
 **Authorized domains** — Build → Authentication → Settings → **Authorized domains**
 → Add domain. Add the Vercel production domain (e.g. `weight-website.vercel.app`)
@@ -76,16 +77,18 @@ response set. Autosave rewrites that document about 1.5 s after the respondent
 stops typing, so there is exactly one current record per person rather than a
 pile of partial submissions.
 
-The anonymous UID lives in the respondent's browser, so closing the page and
-reopening it later on the same browser resumes their answers. A different
-browser or machine starts fresh — that is what the *Save draft* / *Load draft*
-buttons are for.
+The document is keyed by the respondent's Google account, so they can stop on a
+laptop and finish on a desktop days later. This is why the site uses Google
+sign-in rather than anonymous auth: an anonymous identity lives in browser
+storage, which Safari clears after 7 idle days, and which does not exist at all
+on a second machine.
 
 Useful fields on each document:
 
 | Field | Meaning |
 |---|---|
-| `respondent.name` | What they typed on the intro page |
+| `respondent.name` | Prefilled from their Google account, editable |
+| `account.email` | Verified email from Google — the reliable identifier |
 | `complete` | All weight sets filled and summing to 1.000 |
 | `submitted` | They pressed **Mark as final** on the review page |
 | `updatedAt` | Server timestamp of the last save |
@@ -128,7 +131,7 @@ project; it does not grant access to it. The rules are what protect the data.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Chip reads "Local only" | Opened as a `file://` URL | Use the hosted link or `firebase serve` |
-| Chip reads "Not connected", console says `auth/configuration-not-found` | Anonymous sign-in not enabled | Step 1 above |
+| Sign-in screen errors, console says `auth/operation-not-allowed` | Google sign-in not enabled | Step 1 above |
 | Chip reads "Not connected", console says `auth/unauthorized-domain` | Serving from a domain Firebase doesn't know | Authentication → Settings → Authorized domains → add the Vercel domain |
 | No `elicitations` collection appears | No write has succeeded yet — almost always the rules | Publish `firestore.rules` (step 2) |
 | Logic tree image missing on the deployed site but fine locally | Filename case mismatch — macOS ignores case, Linux does not | Make the `src` in `index.html` match the file exactly |

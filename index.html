@@ -26,15 +26,43 @@
   <div class="progress-rail"><div id="progress-fill" class="progress-fill"></div></div>
 </header>
 
-<div class="layout">
+<div class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <span class="brand-mark gate-mark">LT</span>
+    <h1>Logic Tree Weight Elicitation</h1>
+    <p class="gate-lede">
+      Expert weight assignment for the cyclic resistance logic tree.
+      Please sign in before you begin.
+    </p>
+
+    <button type="button" class="btn btn-google" id="btn-signin" disabled>
+      <svg viewBox="0 0 18 18" width="17" height="17" aria-hidden="true">
+        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/>
+        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+      </svg>
+      <span id="signin-label">Connecting…</span>
+    </button>
+
+    <p class="gate-error" id="gate-error" hidden></p>
+
+    <p class="gate-note">
+      Signing in lets you close the page and pick up where you left off — on any
+      computer, any day. Your answers are visible only to you and the study
+      coordinator; no one else on the panel can see them.
+    </p>
+  </div>
+</div>
+
+<div class="layout" id="layout">
 
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-heading">Sections</div>
     <ol id="nav-list" class="nav-list"></ol>
-    <div class="sidebar-actions">
-      <button type="button" class="btn btn-ghost btn-sm" id="btn-save-draft">Save draft</button>
-      <button type="button" class="btn btn-ghost btn-sm" id="btn-load-draft">Load draft</button>
-      <input type="file" id="draft-input" accept="application/json" hidden>
+    <div class="sidebar-actions" id="account-box" hidden>
+      <div class="account-email" id="account-email"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-signout">Sign out</button>
     </div>
   </nav>
 
@@ -116,10 +144,9 @@
           is often more useful to the report than the number itself.</li>
         <li>Your answers save automatically as you type. The chip at the top right tells you when
           the last save happened.</li>
-        <li>You can close the page and come back later on the same browser — your answers will be
-          waiting. Only you and the study coordinator can see them.</li>
-        <li><em>Save draft</em> in the sidebar downloads a copy, if you want to move between
-          computers or keep your own record.</li>
+        <li>You can stop at any point and come back later — on this computer or another one.
+          Sign in with the same account and your answers will be where you left them.</li>
+        <li>Only you and the study coordinator can see your responses.</li>
       </ul>
 
       <h2>Respondent</h2>
@@ -127,6 +154,7 @@
         <label class="field field-wide">
           <span class="field-label">Your name <em>required</em></span>
           <input type="text" id="r-name" autocomplete="name" placeholder="First and last name">
+          <span class="field-hint" id="name-hint" hidden>Filled in from your account — edit it if you prefer a different form.</span>
         </label>
       </div>
 
