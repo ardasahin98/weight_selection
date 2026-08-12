@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Tree Weight Elicitation</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">LT</span>
+      <div>
+        <div class="brand-title">Logic Tree Weight Elicitation</div>
+        <div class="brand-sub">Cyclic resistance assessment &mdash; expert weight assignment</div>
+      </div>
+    </div>
+    <div class="topbar-status">
+      <span id="sync-chip" class="chip chip-muted" title="">Connecting…</span>
+      <span id="respondent-chip" class="chip chip-muted">No respondent</span>
+      <span id="progress-chip" class="chip">0 / 0 complete</span>
+    </div>
+  </div>
+  <div class="progress-rail"><div id="progress-fill" class="progress-fill"></div></div>
+</header>
+
+<div class="layout">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-heading">Sections</div>
+    <ol id="nav-list" class="nav-list"></ol>
+    <div class="sidebar-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-save-draft">Save draft</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-load-draft">Load draft</button>
+      <input type="file" id="draft-input" accept="application/json" hidden>
+    </div>
+  </nav>
+
+  <main class="main" id="main">
+
+    <!-- ============ INTRO ============ -->
+    <section class="panel" id="panel-intro" data-panel="intro">
+      <h1>Weight elicitation for the cyclic resistance logic tree</h1>
+
+      <p class="lede">
+        This exercise collects your judgment on the <strong>relative weights</strong> of the branches
+        in the logic tree for cyclic resistance assessment. Your responses, together with those of the
+        other panel members, will inform the weighting guidance in the final report.
+      </p>
+
+      <div class="callout">
+        <div class="callout-title">What you are being asked</div>
+        <p>
+          You will work through a number of weight sets. In each, you distribute weight across the
+          available branches so that the weights <strong>sum to 1.000</strong>. A weight of 0 is a
+          legitimate answer &mdash; it means you would not use that branch at all under those conditions.
+        </p>
+      </div>
+
+      <h2>Structure of the logic tree</h2>
+
+      <figure class="tree-figure">
+        <img src="logic_tree.png" alt="Four-stage logic tree: fines content classification, susceptibility (S-CBT models), assessment type, cyclic resistance.">
+        <figcaption>
+          The logic tree including fines content effects. Stage&nbsp;1 splits the soil unit on fines
+          content; the coarse-grained branch bypasses Stage&nbsp;2 with P[S]&nbsp;=&nbsp;1, while the
+          fine-grained branch passes through the S&#8209;CBT models. You are asked to weight the
+          highlighted stages below.
+        </figcaption>
+      </figure>
+
+      <div class="stage-flow">
+        <div class="stage-card">
+          <div class="stage-label">Stage 1</div>
+          <div class="stage-name">Fines Content Classification</div>
+          <div class="stage-note">Split on P[FC &lt; FC<sub>th</sub>]. <strong>Fixed</strong> for this exercise:
+            FC<sub>th</sub> is taken as a single value. Not elicited.</div>
+        </div>
+        <div class="stage-arrow" aria-hidden="true"></div>
+        <div class="stage-card stage-active">
+          <div class="stage-label">Stage 2</div>
+          <div class="stage-name">Susceptibility (S&#8209;CBT models)</div>
+          <div class="stage-note">Median and &plusmn;1&sigma; model results. <strong>Elicited</strong> in Section A.</div>
+        </div>
+        <div class="stage-arrow" aria-hidden="true"></div>
+        <div class="stage-card">
+          <div class="stage-label">Stage 3</div>
+          <div class="stage-name">Assessment Type</div>
+          <div class="stage-note">P[S] vs 1&minus;P[S]. <strong>Fixed</strong> by the S&#8209;CBT model output. Not elicited.</div>
+        </div>
+        <div class="stage-arrow" aria-hidden="true"></div>
+        <div class="stage-card stage-active">
+          <div class="stage-label">Stage 4</div>
+          <div class="stage-name">Cyclic Resistance</div>
+          <div class="stage-note">Assessment types per case. <strong>Elicited</strong> in Sections B&ndash;D.</div>
+        </div>
+      </div>
+
+      <h2>Data availability</h2>
+      <p>
+        Weights are expected to depend on what data are available at a site. Each Stage&nbsp;4 case is
+        therefore asked under four scenarios. <strong>Penetration resistance data are assumed available in
+        every scenario</strong>; everything else is optional and accumulates:
+      </p>
+      <ol class="scenario-list" id="scenario-legend"></ol>
+
+      <h2>Before you start</h2>
+      <ul class="plain-list">
+        <li>Answer as general guidance, not for one specific site.</li>
+        <li>Weights within a set must sum to 1.000. The form will tell you where you stand.</li>
+        <li>The comment box under each set is optional but valuable &mdash; the reasoning behind a weight
+          is often more useful to the report than the number itself.</li>
+        <li>Your answers save automatically as you type. The chip at the top right tells you when
+          the last save happened.</li>
+        <li>You can close the page and come back later on the same browser — your answers will be
+          waiting. Only you and the study coordinator can see them.</li>
+        <li><em>Save draft</em> in the sidebar downloads a copy, if you want to move between
+          computers or keep your own record.</li>
+      </ul>
+
+      <h2>Respondent</h2>
+      <div class="field-grid">
+        <label class="field field-wide">
+          <span class="field-label">Your name <em>required</em></span>
+          <input type="text" id="r-name" autocomplete="name" placeholder="First and last name">
+        </label>
+      </div>
+
+      <div class="panel-nav">
+        <span></span>
+        <button type="button" class="btn btn-primary" data-goto="next">Begin &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ============ GENERATED WEIGHT PANELS ============ -->
+    <div id="generated"></div>
+
+    <!-- ============ REVIEW / EXPORT ============ -->
+    <section class="panel" id="panel-review" data-panel="review" hidden>
+      <h1>Review and submit</h1>
+      <p class="lede">Check the summary below, then download your responses and send the file back.</p>
+
+      <div id="review-status"></div>
+      <div id="review-body"></div>
+
+      <div class="export-box">
+        <div class="callout-title">Download your responses</div>
+        <p>Both files contain the same information. Send whichever is easier &mdash; or both.</p>
+        <div class="export-actions">
+          <button type="button" class="btn btn-primary" id="btn-export-json">Download JSON</button>
+          <button type="button" class="btn btn-secondary" id="btn-export-csv">Download CSV</button>
+          <button type="button" class="btn btn-ghost" id="btn-submit-online" hidden>Mark as final</button>
+        </div>
+        <p class="fineprint" id="export-note"></p>
+      </div>
+
+      <div class="panel-nav">
+        <button type="button" class="btn btn-ghost" data-goto="prev">&larr; Back</button>
+        <span></span>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+<script type="module" src="firebase-sync.js"></script>
+</body>
+</html>

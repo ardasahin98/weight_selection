@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// Weight elicitation — Firestore security rules
+//
+// One document per respondent, named after their anonymous auth UID.
+// A respondent may read and write only their own document, and cannot list
+// the collection, so no one on the panel can see anyone else's weights.
+// You read the results from the Firebase console or with the Admin SDK,
+// neither of which is subject to these rules.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /elicitations/{uid} {
+
+      allow get: if request.auth != null
+                 && request.auth.uid == uid;
+
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && request.resource.data.uid == uid
+                            // Keep a stray client from writing something huge.
+                            && request.resource.data.responses.size() <= 100;
+
+      // Responses are never deleted by the client, and the collection is
+      // never listable. Both are denied by falling through.
+      allow delete, list: if false;
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
