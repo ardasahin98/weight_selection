@@ -124,18 +124,31 @@
         </div>
       </div>
 
-      <h2>Fines content</h2>
+      <h2>How fines content should be handled</h2>
       <p>
-        Fines content is not a stage of the tree. It is a <strong>condition on the soil unit</strong>:
-        each Stage&nbsp;3 section asks you to answer for one fines-content case, since the methods you
-        would weight most heavily are expected to change with it.
+        Fines content is not a stage of the tree &mdash; it is a condition on the soil unit, and the
+        methods you would weight most heavily are expected to change with it. There are two ways to
+        express that, and they ask different things of you. Choose one before you begin; you can
+        change your mind later and nothing you have already entered will be lost.
       </p>
-      <ul class="plain-list">
-        <li><strong>Low fines content</strong> &mdash; FC below about 25%, coarse-grained dominated.</li>
-        <li><strong>Transitional fines content</strong> &mdash; FC roughly 25&ndash;40%, neither
-          behaviour clearly dominates.</li>
-        <li><strong>High fines content</strong> &mdash; FC above about 40%, fine-grained dominated.</li>
-      </ul>
+
+      <div class="approach" id="approach-box"></div>
+
+      <div class="callout">
+        <div class="callout-title">What the two approaches mean in practice</div>
+        <p>
+          With a <strong>transition function</strong>, you give one set of base weights per data
+          scenario &mdash; how much you trust each method relative to the others, with no particular
+          fines content in mind. The function then scales the penetration-based methods by
+          <em>f</em>(FC) and the fine-grained methods by 1&nbsp;&minus;&nbsp;<em>f</em>(FC).
+        </p>
+        <p>
+          With <strong>fines-content cases</strong>, there is no function. You are asked the same
+          weight table three times &mdash; at low (FC&nbsp;&lt;&nbsp;25%), transitional
+          (25&ndash;40%) and high (FC&nbsp;&gt;&nbsp;40%) fines content &mdash; and your three
+          answers are used directly as bins.
+        </p>
+      </div>
 
       <h2>The two columns</h2>
       <p>
@@ -178,8 +191,8 @@
       </div>
 
       <div class="panel-nav">
-        <span></span>
-        <button type="button" class="btn btn-primary" data-goto="next">Begin &rarr;</button>
+        <span class="begin-hint" id="begin-hint">Choose how fines content should be handled, above, to continue.</span>
+        <button type="button" class="btn btn-primary" id="btn-begin" data-goto="next" disabled>Begin &rarr;</button>
       </div>
     </section>
 

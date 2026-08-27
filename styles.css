@@ -503,3 +503,34 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
   .wtable-2col .branch-desc { display: none; }
   .wtotal { flex-wrap: wrap; }
 }
+
+/* ---------- approach question (intro) ---------- */
+
+.approach { margin: 1rem 0 1.25rem; }
+.qblock {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: .9rem 1rem 1rem;
+  margin-bottom: .75rem;
+  background: var(--paper);
+}
+.qtitle { font-family: var(--serif); font-weight: 700; font-size: .98rem; margin-bottom: .2rem; }
+.qhelp { font-size: .86rem; color: var(--ink-soft); margin: 0 0 .7rem; max-width: 70ch; }
+.opts { display: flex; flex-direction: column; gap: .4rem; }
+.opt {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-alt);
+  cursor: pointer;
+}
+.opt:hover { border-color: var(--deep); }
+.opt.is-picked { background: var(--accent-tint); border-color: var(--accent); }
+.opt input { margin-top: .28rem; flex: none; accent-color: var(--accent); }
+.opt-label { display: block; font-weight: 600; font-size: .92rem; }
+.opt-desc { display: block; font-size: .82rem; color: var(--ink-soft); line-height: 1.45; margin-top: .1rem; }
+.opt-text { margin-top: .6rem; }
+
+.begin-hint { font-size: .84rem; color: var(--accent); font-weight: 600; }
+.begin-hint[hidden] { display: none; }

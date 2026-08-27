@@ -54,6 +54,48 @@ const COLUMNS = [
 ];
 
 /* --------------------------------------------------------------------------
+   APPROACH — how fines content enters the Stage 3 weights
+   --------------------------------------------------------------------------
+   Two mutually exclusive ways to handle it, chosen by the respondent up front.
+
+     Transition function.  The respondent gives one *base* weight vector. The
+     fines-content dependence comes entirely from the transition function,
+     which multiplies the penetration-based family by f(FC) and the
+     fine-grained family by 1 − f(FC). No fines-content cases are asked,
+     because the function is what supplies them.
+
+     Fines-content cases.  No function. The respondent is asked the same
+     weight table separately at low, transitional and high fines content, and
+     the three answers are used as bins.
+
+   The scope question only bites when a function is in use: applying it to the
+   susceptible branch alone leaves the cyclic softening branch to be asked in
+   fines-content cases instead.
+   -------------------------------------------------------------------------- */
+
+const TRANSITION_FUNCTIONS = [
+  { id: 'varun', label: "Varun's fines-content transition function" },
+  { id: 'usability', label: 'Dataset usability fines-content function' },
+  { id: 'other', label: 'Other — please name it', freeText: true }
+];
+
+const SCOPES = [
+  {
+    id: 'susceptible',
+    label: 'Susceptible branch only',
+    desc: 'The function supplies the fines-content dependence on the liquefaction branch. ' +
+          'The cyclic softening branch is then asked separately at low, transitional and high fines content.'
+  },
+  {
+    id: 'both',
+    label: 'Both branches',
+    desc: 'The function supplies the fines-content dependence on both branches. Note that the ' +
+          'cyclic softening branch carries no penetration-based models, so there the function ' +
+          'shifts weight between DEA24 and DEA18 rather than between families.'
+  }
+];
+
+/* --------------------------------------------------------------------------
    STAGE 1 — SUSCEPTIBILITY (S-CBT models)
    -------------------------------------------------------------------------- */
 
@@ -308,10 +350,84 @@ function describeScenario(sc, withCyclic) {
   return bits.join(' ');
 }
 
-function buildSchema() {
+/* Which Stage-3 branches get split into fines-content cases, given the
+   respondent's choice. With a transition function in play the function itself
+   supplies the fines-content dependence, so no cases are asked on that branch. */
+function splitPlan(approach) {
+  if (!approach || approach.useTransition === null) return null;
+  if (approach.useTransition) {
+    return { susceptible: false, notSusceptible: approach.scope !== 'both' };
+  }
+  // No function: fines-content cases on the susceptible branch only.
+  return { susceptible: true, notSusceptible: false };
+}
+
+function transitionLabel(approach) {
+  if (!approach || !approach.useTransition) return '';
+  const fn = TRANSITION_FUNCTIONS.find(f => f.id === approach.transitionFn);
+  if (!fn) return 'a fines-content transition function';
+  if (fn.freeText) return approach.transitionOther.trim() || 'a fines-content transition function';
+  return fn.label;
+}
+
+/* The note that tells the respondent what the numbers in front of them mean —
+   base weights that a function will scale, or weights for one fines-content
+   case. Getting this wrong is the difference between a usable answer and an
+   unusable one, so it sits at the top of every Stage-3 panel. */
+function stage3Note(usesFunction, approach) {
+  if (usesFunction) {
+    return 'These are <strong>base weights</strong>. ' + transitionLabel(approach) +
+      ' supplies the fines-content dependence on top of them, so answer without a ' +
+      'particular fines content in mind — weight the methods relative to one another ' +
+      'and let the function do the rest. A weight of 0 is a valid answer.';
+  }
+  return 'Answer for <strong>this fines-content case only</strong>. A weight of 0 is a valid ' +
+    'answer — it means you would not use that method at all with the data listed.';
+}
+
+const COLUMN_NOTE =
+  ' Fill both columns: the heterogeneous column starts as a copy of the homogeneous one, ' +
+  'so change it only where your judgment would actually differ.';
+
+function makeStage3Panel(opts) {
+  const { fc, scenarios, letter, pool, defs, keyPrefix, navGroup, branchName,
+          branchDesc, approach, usesFunction } = opts;
+  const key = keyPrefix + (fc ? fc.id : 'ALL');
+  const title = fc ? fc.name + ' — ' + branchName : 'Cyclic resistance — ' + branchName;
+
+  return {
+    key: key,
+    navGroup: navGroup,
+    navLabel: letter + '. ' + (fc ? fc.short : 'Base weights'),
+    eyebrow: 'Section ' + letter + ' · Stage 3 · ' + navGroup.replace('Stage 3 — ', ''),
+    title: title,
+    intro: (fc ? fc.desc + ' ' : '') + branchDesc +
+           (usesFunction
+             ? ' Fines content is handled by the transition function you chose, so it is not asked here.'
+             : ''),
+    note: stage3Note(usesFunction, approach) + COLUMN_NOTE,
+    sets: scenarios.map((sc, i, arr) => ({
+      id: key + '.' + sc.id,
+      section: 'Section ' + letter + ' — ' + title,
+      caseName: title,
+      fc: fc ? fc.id : 'base',
+      assessment: keyPrefix === 'S-' ? 'liquefaction' : 'cyclic softening',
+      scenarioName: sc.name,
+      title: sc.name,
+      index: i + 1,
+      count: arr.length,
+      kicker: 'Data scenario',
+      desc: sc.desc,
+      branches: branchList(pool, defs, sc)
+    }))
+  };
+}
+
+function buildSchema(approach) {
   const panels = [];
 
-  /* ---- Section A — Stage 1 susceptibility ---- */
+  /* ---- Section A — Stage 1 susceptibility. Independent of fines content,
+     so it is asked the same way whatever the respondent chose. ---- */
   panels.push({
     key: 'A',
     navGroup: 'Stage 1',
@@ -323,7 +439,7 @@ function buildSchema() {
       'weight you would give to each model result under each data scenario below.',
     note:
       'These weights describe how much confidence you place in each model, <strong>not</strong> how ' +
-      'likely the soil is to be susceptible — that comes from the model output itself.',
+      'likely the soil is to be susceptible — that comes from the model output itself.' + COLUMN_NOTE,
     sets: SUSC_SCENARIOS.map((sc, i, arr) => ({
       id: 'A.' + sc.id,
       section: 'A. Susceptibility (Stage 1)',
@@ -338,68 +454,35 @@ function buildSchema() {
     }))
   });
 
-  /* ---- Sections B — Stage 3, susceptible branch, one panel per FC case ---- */
-  const crScenarios = expandCyclic(CR_SCENARIOS);
-  const letters = ['B', 'C', 'D'];
+  const plan = splitPlan(approach);
+  if (!plan) return panels;   // approach not chosen yet — Stage 3 is not built
 
-  FC_CASES.forEach((fc, fi) => {
-    panels.push({
-      key: 'S-' + fc.id,
+  const crScenarios = expandCyclic(CR_SCENARIOS);
+  const letters = ['B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  let li = 0;
+  const nextLetter = () => letters[li++] || '·';
+
+  const suscCases = plan.susceptible ? FC_CASES : [null];
+  suscCases.forEach(fc => {
+    panels.push(makeStage3Panel({
+      fc: fc, scenarios: crScenarios, letter: nextLetter(),
+      pool: SUSCEPTIBLE_POOL, defs: CR_BRANCHES, keyPrefix: 'S-',
       navGroup: 'Stage 3 — Liquefaction',
-      navLabel: letters[fi] + '. ' + fc.short,
-      eyebrow: 'Section ' + letters[fi] + ' · Stage 3 · Liquefaction assessment',
-      title: fc.name + ' — susceptible',
-      intro: fc.desc + ' ' + SUSC_DESC + ' Weight the cyclic resistance assessment methods below.',
-      note:
-        'A weight of 0 is a valid answer — it means you would not use that method at all with ' +
-        'the data listed. Fill both columns: the heterogeneous column starts as a copy of the ' +
-        'homogeneous one, so change it only where your judgment would actually differ.',
-      sets: crScenarios.map((sc, i, arr) => ({
-        id: 'S-' + fc.id + '.' + sc.id,
-        section: 'Section ' + letters[fi] + ' — ' + fc.name + ', susceptible',
-        caseName: fc.name + ' — susceptible',
-        fc: fc.id,
-        assessment: 'liquefaction',
-        scenarioName: sc.name,
-        title: sc.name,
-        index: i + 1,
-        count: arr.length,
-        kicker: 'Data scenario',
-        desc: sc.desc,
-        branches: branchList(SUSCEPTIBLE_POOL, CR_BRANCHES, sc)
-      }))
-    });
+      branchName: 'susceptible', branchDesc: SUSC_DESC,
+      approach: approach, usesFunction: !plan.susceptible
+    }));
   });
 
-  /* ---- Sections E–F — Stage 3, not-susceptible branch ---- */
-  const csLetters = ['E', 'F', 'G'];
-  CS_FC_CASES.forEach((fcId, fi) => {
-    const fc = FC_CASES.find(f => f.id === fcId);
-    panels.push({
-      key: 'N-' + fc.id,
+  const csCases = plan.notSusceptible ? FC_CASES : [null];
+  csCases.forEach(fc => {
+    panels.push(makeStage3Panel({
+      fc: fc, scenarios: CS_SCENARIOS, letter: nextLetter(),
+      pool: NOT_SUSCEPTIBLE_POOL, defs: CR_BRANCHES, keyPrefix: 'N-',
       navGroup: 'Stage 3 — Cyclic softening',
-      navLabel: csLetters[fi] + '. ' + fc.short,
-      eyebrow: 'Section ' + csLetters[fi] + ' · Stage 3 · Cyclic softening',
-      title: fc.name + ' — not susceptible',
-      intro: fc.desc + ' ' + NOTSUSC_DESC,
-      note:
-        'Only the two fine-grained models apply on this branch, plus site-specific cyclic testing ' +
-        'where it is available. Both can be used with field data alone.',
-      sets: CS_SCENARIOS.map((sc, i, arr) => ({
-        id: 'N-' + fc.id + '.' + sc.id,
-        section: 'Section ' + csLetters[fi] + ' — ' + fc.name + ', not susceptible',
-        caseName: fc.name + ' — not susceptible',
-        fc: fc.id,
-        assessment: 'cyclic softening',
-        scenarioName: sc.name,
-        title: sc.name,
-        index: i + 1,
-        count: arr.length,
-        kicker: 'Data scenario',
-        desc: sc.desc,
-        branches: branchList(NOT_SUSCEPTIBLE_POOL, CR_BRANCHES, sc)
-      }))
-    });
+      branchName: 'not susceptible', branchDesc: NOTSUSC_DESC,
+      approach: approach,
+      usesFunction: approach.useTransition && !plan.notSusceptible
+    }));
   });
 
   return panels;
@@ -409,11 +492,18 @@ function buildSchema() {
    STATE
    -------------------------------------------------------------------------- */
 
-const PANELS = buildSchema();
-const ALL_SETS = PANELS.reduce((acc, p) => acc.concat(p.sets), []);
-
 const state = {
   respondent: { name: '', email: '' },
+  /* How fines content is handled at Stage 3. useTransition stays null until
+     the respondent answers, and the Stage-3 panels are not built before then —
+     the two approaches ask genuinely different questions, so guessing a
+     default would put the wrong question in front of them. */
+  approach: {
+    useTransition: null,      // true | false | null
+    transitionFn: '',         // id from TRANSITION_FUNCTIONS
+    transitionOther: '',      // free text when transitionFn === 'other'
+    scope: 'susceptible'      // 'susceptible' | 'both'
+  },
   answers: {},          // setId -> { weights: {branchId: {hom, het, hetEdited}}, comment }
   startedAt: new Date().toISOString(),
   currentPanel: 0,
@@ -430,12 +520,54 @@ const sync = {
   error: null
 };
 
-ALL_SETS.forEach(s => {
-  state.answers[s.id] = { weights: {}, comment: '' };
-  s.branches.forEach(b => {
-    state.answers[s.id].weights[b.id] = { hom: '', het: '', hetEdited: false };
+let PANELS = buildSchema(state.approach);
+let ALL_SETS = PANELS.reduce((acc, p) => acc.concat(p.sets), []);
+
+/* Answer slots are created, never destroyed. Switching approach swaps which
+   sets are on screen; anything already typed under the other approach stays in
+   state and comes back if the respondent switches back. */
+function ensureAnswerSlots() {
+  ALL_SETS.forEach(s => {
+    if (!state.answers[s.id]) state.answers[s.id] = { weights: {}, comment: '' };
+    s.branches.forEach(b => {
+      if (!state.answers[s.id].weights[b.id]) {
+        state.answers[s.id].weights[b.id] = { hom: '', het: '', hetEdited: false };
+      }
+    });
   });
-});
+}
+ensureAnswerSlots();
+
+/* Rebuild the Stage-3 panels after the approach changes. */
+function rebuildSchema() {
+  PANELS = buildSchema(state.approach);
+  ALL_SETS = PANELS.reduce((acc, p) => acc.concat(p.sets), []);
+  ensureAnswerSlots();
+
+  const host = document.getElementById('generated');
+  host.innerHTML = '';
+  renderPanels();
+  restoreInputsFromState();
+
+  const order = panelOrder();
+  if (state.currentPanel > order.length - 1) state.currentPanel = order.length - 1;
+  showPanel(state.currentPanel);
+}
+
+/* Push state back into freshly rendered inputs. */
+function restoreInputsFromState() {
+  ALL_SETS.forEach(set => {
+    set.branches.forEach(b => {
+      const cell = state.answers[set.id].weights[b.id];
+      writeCell(set.id, b.id, 'hom', cell.hom);
+      writeCell(set.id, b.id, 'het', cell.het);
+      paintCell(set.id, b.id);
+    });
+    const ta = document.getElementById('comment-' + set.id);
+    if (ta) ta.value = state.answers[set.id].comment || '';
+    updateSetStatus(set.id);
+  });
+}
 
 /* --------------------------------------------------------------------------
    DOM HELPERS
@@ -489,6 +621,111 @@ function renderColumnLegend() {
       el('div', { class: 'col-legend-desc', text: c.hint })
     ]));
   });
+}
+
+/* --------------------------------------------------------------------------
+   RENDER — the approach question
+   --------------------------------------------------------------------------
+   This is the first thing the respondent answers, and it decides what the rest
+   of the questionnaire asks. Changing it later is allowed and rebuilds the
+   Stage-3 sections in place; nothing already typed is thrown away.
+   -------------------------------------------------------------------------- */
+
+function radio(name, checked, label, desc, onPick) {
+  const input = el('input', { type: 'radio', name: name });
+  input.checked = !!checked;
+  input.addEventListener('change', () => { if (input.checked) onPick(); });
+  return el('label', { class: 'opt' + (checked ? ' is-picked' : '') }, [
+    input,
+    el('span', {}, [
+      el('span', { class: 'opt-label', text: label }),
+      desc ? el('span', { class: 'opt-desc', text: desc }) : null
+    ])
+  ]);
+}
+
+function renderApproachControls() {
+  const box = $('#approach-box');
+  if (!box) return;
+  box.innerHTML = '';
+  const a = state.approach;
+
+  const pick = (patch) => {
+    Object.assign(a, patch);
+    renderApproachControls();
+    rebuildSchema();
+    updateBeginGate();
+    markDirty();
+  };
+
+  /* Q1 — function or fines-content cases */
+  box.appendChild(el('div', { class: 'qblock' }, [
+    el('div', { class: 'qtitle', text: 'Would you like to use a fines-content transition function?' }),
+    el('p', { class: 'qhelp', text:
+      'With a transition function you give one set of base weights and the function supplies the ' +
+      'fines-content dependence. Without one, you are asked the same weights separately at low, ' +
+      'transitional and high fines content.' }),
+    el('div', { class: 'opts' }, [
+      radio('use-transition', a.useTransition === true,
+        'Yes — use a transition function',
+        'One set of base weights per data scenario; the function handles fines content.',
+        () => pick({ useTransition: true })),
+      radio('use-transition', a.useTransition === false,
+        'No — ask me for each fines-content case',
+        'Weights asked separately at low, transitional and high fines content.',
+        () => pick({ useTransition: false }))
+    ])
+  ]));
+
+  if (a.useTransition !== true) return;
+
+  /* Q2 — which function */
+  const fnOpts = el('div', { class: 'opts' });
+  TRANSITION_FUNCTIONS.forEach(fn => {
+    fnOpts.appendChild(radio('transition-fn', a.transitionFn === fn.id, fn.label, null,
+      () => pick({ transitionFn: fn.id })));
+  });
+  const fnBlock = el('div', { class: 'qblock' }, [
+    el('div', { class: 'qtitle', text: 'Which transition function?' }),
+    fnOpts
+  ]);
+  if (a.transitionFn === 'other') {
+    const t = el('input', {
+      type: 'text', id: 'transition-other', class: 'opt-text',
+      placeholder: 'Name the function you would use', value: a.transitionOther
+    });
+    /* Free text must not rebuild the schema on every keystroke — it only
+       changes wording, so update state and repaint the notes lazily. */
+    t.addEventListener('input', e => {
+      a.transitionOther = e.target.value;
+      markDirty();
+    });
+    t.addEventListener('change', () => { rebuildSchema(); });
+    fnBlock.appendChild(t);
+  }
+  box.appendChild(fnBlock);
+
+  /* Q3 — scope */
+  const scopeOpts = el('div', { class: 'opts' });
+  SCOPES.forEach(sc => {
+    scopeOpts.appendChild(radio('transition-scope', a.scope === sc.id, sc.label, sc.desc,
+      () => pick({ scope: sc.id })));
+  });
+  box.appendChild(el('div', { class: 'qblock' }, [
+    el('div', { class: 'qtitle', text: 'Where should the transition function apply?' }),
+    scopeOpts
+  ]));
+}
+
+/* The questionnaire cannot start before the approach is chosen, because the
+   two approaches ask different questions. */
+function updateBeginGate() {
+  const btn = $('#btn-begin');
+  const hint = $('#begin-hint');
+  if (!btn) return;
+  const ready = state.approach.useTransition !== null;
+  btn.disabled = !ready;
+  if (hint) hint.hidden = ready;
 }
 
 /* --------------------------------------------------------------------------
@@ -969,11 +1206,16 @@ function collectPayload() {
     schemaVersion: CONFIG.version,
     study: CONFIG.study,
     respondent: Object.assign({}, state.respondent),
+    approach: Object.assign({}, state.approach),
     startedAt: state.startedAt,
     completedAt: new Date().toISOString(),
     complete: ALL_SETS.every(s => setStatus(s.id) === 'complete'),
     submitted: state.submitted,
     submittedAt: state.submittedAt,
+    /* Everything typed, under either approach, keyed by set id. `responses`
+       below is the active approach only — this is what lets someone switch
+       approach and switch back without losing work. */
+    answersRaw: state.answers,
     responses: ALL_SETS.map(set => ({
       setId: set.id,
       section: set.section,
@@ -1008,26 +1250,31 @@ function toCSV(payload) {
   };
   const rows = [[
     'respondent_name', 'respondent_email',
+    'uses_transition_function', 'transition_function', 'transition_scope',
     'set_id', 'section', 'case', 'fines_content', 'assessment', 'scenario',
     'branch_id', 'branch', 'stratigraphy', 'weight', 'inherited',
     'set_sum', 'set_status', 'comment', 'completed_at'
   ]];
   const r = payload.respondent;
+  const ap = payload.approach || {};
+  const apCols = [
+    ap.useTransition === true ? 'yes' : (ap.useTransition === false ? 'no' : ''),
+    ap.useTransition ? (ap.transitionFn === 'other' ? ap.transitionOther : ap.transitionFn) : '',
+    ap.useTransition ? ap.scope : ''
+  ];
   payload.responses.forEach(res => {
     res.weights.forEach(w => {
-      rows.push([
-        r.name, r.email || '',
+      rows.push([r.name, r.email || ''].concat(apCols, [
         res.setId, res.section, res.case, res.fc, res.assessment, res.scenario,
         w.branchId, w.branch, 'homogeneous', w.homogeneous === null ? '' : w.homogeneous, 'no',
         res.sumHomogeneous, res.status, res.comment, payload.completedAt
-      ]);
-      rows.push([
-        r.name, r.email || '',
+      ]));
+      rows.push([r.name, r.email || ''].concat(apCols, [
         res.setId, res.section, res.case, res.fc, res.assessment, res.scenario,
         w.branchId, w.branch, 'heterogeneous', w.heterogeneous === null ? '' : w.heterogeneous,
         w.heterogeneousInherited ? 'yes' : 'no',
         res.sumHeterogeneous, res.status, res.comment, payload.completedAt
-      ]);
+      ]));
     });
   });
   return rows.map(row => row.map(esc).join(',')).join('\n');
@@ -1161,6 +1408,29 @@ async function restoreFromCloud() {
   state.submitted = !!data.submitted;
   state.submittedAt = data.submittedAt || null;
 
+  /* The approach has to be restored before anything else, because it decides
+     which sets exist. Rebuild, then refill. */
+  if (data.approach && data.approach.useTransition !== undefined) {
+    Object.assign(state.approach, data.approach);
+    renderApproachControls();
+    updateBeginGate();
+    rebuildSchema();
+  }
+
+  if (data.answersRaw) {
+    Object.keys(data.answersRaw).forEach(setId => {
+      const src = data.answersRaw[setId];
+      if (!src) return;
+      if (!state.answers[setId]) state.answers[setId] = { weights: {}, comment: '' };
+      state.answers[setId].comment = src.comment || '';
+      Object.keys(src.weights || {}).forEach(bid => {
+        state.answers[setId].weights[bid] = Object.assign(
+          { hom: '', het: '', hetEdited: false }, src.weights[bid]);
+      });
+    });
+    restoreInputsFromState();
+  }
+
   (data.responses || []).forEach(res => {
     const set = setOf(res.setId);
     if (!set) return;   // schema changed since the record was written
@@ -1251,6 +1521,8 @@ async function markFinal() {
 function init() {
   renderScenarioLegend();
   renderColumnLegend();
+  renderApproachControls();
+  updateBeginGate();
   renderPanels();
 
   $('#r-name').addEventListener('input', e => {
