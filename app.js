@@ -355,11 +355,12 @@ function describeScenario(sc, withCyclic) {
    supplies the fines-content dependence, so no cases are asked on that branch. */
 function splitPlan(approach) {
   if (!approach || approach.useTransition === null) return null;
-  if (approach.useTransition) {
-    return { susceptible: false, notSusceptible: approach.scope !== 'both' };
-  }
-  // No function: fines-content cases on the susceptible branch only.
-  return { susceptible: true, notSusceptible: false };
+  /* The cyclic softening branch is never split into fines-content cases. It
+     carries only DEA24 and DEA18, so there is no penetration-versus-lab family
+     for fines content to trade between and the three cases would ask the same
+     question three times. Fines-content cases appear on the susceptible branch
+     only, and only when no transition function is in use. */
+  return { susceptible: !approach.useTransition, notSusceptible: false };
 }
 
 function transitionLabel(approach) {
@@ -374,15 +375,20 @@ function transitionLabel(approach) {
    base weights that a function will scale, or weights for one fines-content
    case. Getting this wrong is the difference between a usable answer and an
    unusable one, so it sits at the top of every Stage-3 panel. */
-function stage3Note(usesFunction, approach) {
+function stage3Note(usesFunction, hasFcCase, approach) {
   if (usesFunction) {
     return 'These are <strong>base weights</strong>. ' + transitionLabel(approach) +
       ' supplies the fines-content dependence on top of them, so answer without a ' +
       'particular fines content in mind — weight the methods relative to one another ' +
       'and let the function do the rest. A weight of 0 is a valid answer.';
   }
-  return 'Answer for <strong>this fines-content case only</strong>. A weight of 0 is a valid ' +
-    'answer — it means you would not use that method at all with the data listed.';
+  if (hasFcCase) {
+    return 'Answer for <strong>this fines-content case only</strong>. A weight of 0 is a valid ' +
+      'answer — it means you would not use that method at all with the data listed.';
+  }
+  return 'Answer as general guidance for this branch, <strong>across fines contents</strong>. ' +
+    'A weight of 0 is a valid answer — it means you would not use that method at all with the ' +
+    'data listed.';
 }
 
 const COLUMN_NOTE =
@@ -398,14 +404,15 @@ function makeStage3Panel(opts) {
   return {
     key: key,
     navGroup: navGroup,
-    navLabel: letter + '. ' + (fc ? fc.short : 'Base weights'),
+    navLabel: letter + '. ' + (fc ? fc.short
+      : (usesFunction ? 'Base weights' : 'All fines contents')),
     eyebrow: 'Section ' + letter + ' · Stage 3 · ' + navGroup.replace('Stage 3 — ', ''),
     title: title,
     intro: (fc ? fc.desc + ' ' : '') + branchDesc +
            (usesFunction
              ? ' Fines content is handled by the transition function you chose, so it is not asked here.'
              : ''),
-    note: stage3Note(usesFunction, approach) + COLUMN_NOTE,
+    note: stage3Note(usesFunction, !!fc, approach) + COLUMN_NOTE,
     sets: scenarios.map((sc, i, arr) => ({
       id: key + '.' + sc.id,
       section: 'Section ' + letter + ' — ' + title,
@@ -481,7 +488,7 @@ function buildSchema(approach) {
       navGroup: 'Stage 3 — Cyclic softening',
       branchName: 'not susceptible', branchDesc: NOTSUSC_DESC,
       approach: approach,
-      usesFunction: approach.useTransition && !plan.notSusceptible
+      usesFunction: approach.useTransition && approach.scope === 'both'
     }));
   });
 
@@ -717,10 +724,11 @@ function renderApproachControls() {
   ]));
 }
 
-/* The questionnaire cannot start before the approach is chosen, because the
-   two approaches ask different questions. */
+/* The weight sections cannot open before the approach is chosen, because the
+   two approaches ask different questions. The gate lives on the approach page,
+   so the introduction stays readable without answering anything. */
 function updateBeginGate() {
-  const btn = $('#btn-begin');
+  const btn = $('#btn-approach-next');
   const hint = $('#begin-hint');
   if (!btn) return;
   const ready = state.approach.useTransition !== null;
@@ -1040,7 +1048,7 @@ function remirror(setId) {
    -------------------------------------------------------------------------- */
 
 function panelOrder() {
-  return ['intro'].concat(PANELS.map(p => p.key), ['review']);
+  return ['intro', 'approach'].concat(PANELS.map(p => p.key), ['review']);
 }
 
 function showPanel(index) {
@@ -1080,6 +1088,8 @@ function renderNav() {
     list.appendChild(el('li', {}, [el('div', { class: 'nav-item is-group', text: label })]));
 
   addItem('Introduction', 0, state.respondent.name ? 'is-done' : '');
+  addItem('Fines content approach', 1,
+    state.approach.useTransition !== null ? 'is-done' : '');
 
   let lastGroup = null;
   PANELS.forEach((p, i) => {
@@ -1087,7 +1097,7 @@ function renderNav() {
     const statuses = p.sets.map(s => setStatus(s.id));
     const allDone = statuses.every(s => s === 'complete');
     const anyStarted = statuses.some(s => s !== 'empty');
-    addItem(p.navLabel, i + 1, allDone ? 'is-done' : (anyStarted ? 'is-partial' : ''));
+    addItem(p.navLabel, i + 2, allDone ? 'is-done' : (anyStarted ? 'is-partial' : ''));
   });
 
   addGroup('Finish');
