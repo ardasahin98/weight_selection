@@ -60,18 +60,15 @@ const COLUMNS = [
 const SUSC_BRANCHES = {
   cbt_median: {
     label: 'This study (S-CBT), median',
-    desc: 'Central estimate of the susceptibility–cyclic behaviour type model developed in this study.',
-    requires: ['cpt']
+    desc: 'Central estimate of the susceptibility–cyclic behaviour type model developed in this study.'
   },
   cbt_plus1: {
     label: 'This study (S-CBT), +1σ',
-    desc: 'One standard deviation above the median — more soils classified as susceptible.',
-    requires: ['cpt']
+    desc: 'One standard deviation above the median — more soils classified as susceptible.'
   },
   cbt_minus1: {
     label: 'This study (S-CBT), −1σ',
-    desc: 'One standard deviation below the median — fewer soils classified as susceptible.',
-    requires: ['cpt']
+    desc: 'One standard deviation below the median — fewer soils classified as susceptible.'
   },
   maurer: {
     label: 'Maurer et al.',
