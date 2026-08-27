@@ -558,7 +558,7 @@ function rebuildSchema() {
 
   const order = panelOrder();
   if (state.currentPanel > order.length - 1) state.currentPanel = order.length - 1;
-  showPanel(state.currentPanel);
+  showPanel(state.currentPanel, { scroll: false });
 }
 
 /* Push state back into freshly rendered inputs. */
@@ -651,15 +651,15 @@ function radio(name, checked, label, desc, onPick) {
   ]);
 }
 
-function renderApproachControls() {
+function renderApproachControls(focusGroup) {
   const box = $('#approach-box');
   if (!box) return;
   box.innerHTML = '';
   const a = state.approach;
 
-  const pick = (patch) => {
+  const pick = (patch, group) => {
     Object.assign(a, patch);
-    renderApproachControls();
+    renderApproachControls(group);
     rebuildSchema();
     updateBeginGate();
     markDirty();
@@ -676,21 +676,21 @@ function renderApproachControls() {
       radio('use-transition', a.useTransition === true,
         'Yes — use a transition function',
         'One set of base weights per data scenario; the function handles fines content.',
-        () => pick({ useTransition: true })),
+        () => pick({ useTransition: true }, 'use-transition')),
       radio('use-transition', a.useTransition === false,
         'No — ask me for each fines-content case',
         'Weights asked separately at low, transitional and high fines content.',
-        () => pick({ useTransition: false }))
+        () => pick({ useTransition: false }, 'use-transition'))
     ])
   ]));
 
-  if (a.useTransition !== true) return;
+  if (a.useTransition !== true) { refocusGroup(focusGroup); return; }
 
   /* Q2 — which function */
   const fnOpts = el('div', { class: 'opts' });
   TRANSITION_FUNCTIONS.forEach(fn => {
     fnOpts.appendChild(radio('transition-fn', a.transitionFn === fn.id, fn.label, null,
-      () => pick({ transitionFn: fn.id })));
+      () => pick({ transitionFn: fn.id }, 'transition-fn')));
   });
   const fnBlock = el('div', { class: 'qblock' }, [
     el('div', { class: 'qtitle', text: 'Which transition function?' }),
@@ -716,12 +716,23 @@ function renderApproachControls() {
   const scopeOpts = el('div', { class: 'opts' });
   SCOPES.forEach(sc => {
     scopeOpts.appendChild(radio('transition-scope', a.scope === sc.id, sc.label, sc.desc,
-      () => pick({ scope: sc.id })));
+      () => pick({ scope: sc.id }, 'transition-scope')));
   });
   box.appendChild(el('div', { class: 'qblock' }, [
     el('div', { class: 'qtitle', text: 'Where should the transition function apply?' }),
     scopeOpts
   ]));
+
+  refocusGroup(focusGroup);
+}
+
+/* Re-rendering the radios replaces the element that was just clicked, so put
+   keyboard focus back on the option the respondent chose. */
+function refocusGroup(name) {
+  if (!name) return;
+  const picked = document.querySelector(
+    '#approach-box input[name="' + name + '"]:checked');
+  if (picked) picked.focus({ preventScroll: true });
 }
 
 /* The weight sections cannot open before the approach is chosen, because the
@@ -1051,7 +1062,7 @@ function panelOrder() {
   return ['intro', 'approach'].concat(PANELS.map(p => p.key), ['review']);
 }
 
-function showPanel(index) {
+function showPanel(index, opts) {
   const order = panelOrder();
   const clamped = Math.max(0, Math.min(order.length - 1, index));
   state.currentPanel = clamped;
@@ -1064,7 +1075,10 @@ function showPanel(index) {
   if (order[clamped] === 'review') renderReview();
   renderNav();
   updateProgress();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  /* Moving to a different panel scrolls to its top. Re-showing the panel you
+     are already on — which is what a schema rebuild does — must not, or
+     answering the approach question throws you back to the top of the page. */
+  if (!opts || opts.scroll !== false) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderNav() {
