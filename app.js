@@ -278,7 +278,9 @@ const CS_SCENARIOS = [
 ];
 
 /* Branch pools per Stage-2 branch. */
-const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'dea18', 'cr_cyclic_lab'];
+/* DEA18 is a cyclic softening model and belongs only on the not-susceptible
+   branch. It is deliberately absent from the liquefaction pool. */
+const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'cr_cyclic_lab'];
 const NOT_SUSCEPTIBLE_POOL = ['dea24', 'dea18', 'cr_cyclic_lab'];
 
 /* The not-susceptible branch is asked for all three fines-content cases. */
