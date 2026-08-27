@@ -92,7 +92,8 @@ Useful fields on each document:
 | `complete` | All weight sets filled and summing to 1.000 |
 | `submitted` | They pressed **Mark as final** on the review page |
 | `updatedAt` | Server timestamp of the last save |
-| `responses[]` | One entry per weight set, with `weights[]`, `sum`, `status`, `comment` |
+| `responses[]` | One entry per weight set, with `weights[]`, `sumHomogeneous`, `sumHeterogeneous`, `status`, `comment` |
+| `schemaVersion` | `2.0` for the three-stage tree; `1.0` records predate it |
 
 `submitted` is the one to watch — it separates people who are done from people
 who are mid-thought, without you having to ask.
@@ -100,6 +101,12 @@ who are mid-thought, without you having to ask.
 ## Reading the results
 
 Small panel, so the console works fine: Firestore Database → `elicitations`.
+
+Each `weights[]` entry now carries `homogeneous`, `heterogeneous` and
+`heterogeneousInherited`. The last one is the important one: `true` means the
+respondent never edited that heterogeneous cell and it is simply a copy of the
+homogeneous weight. Filter those out before treating the heterogeneous column
+as an independent judgment, or you will read mirrored defaults as agreement.
 
 For a combined CSV across everyone:
 
@@ -140,3 +147,30 @@ project; it does not grant access to it. The rules are what protect the data.
 In every one of these the questionnaire keeps working and the download buttons
 still produce the full JSON and CSV — nobody loses their answers, they just have
 to email them.
+
+---
+
+## v2 schema — what changed
+
+The fines-content stage was removed from the tree. The tree is now
+**Stage 1 Susceptibility → Stage 2 Assessment Type → Stage 3 Cyclic
+Resistance**, and fines content became a *case condition* inside Stage 3
+(low / transitional / high FC).
+
+Stage 3 is elicited separately on the two Stage-2 branches. On the
+not-susceptible branch only DEA24 and DEA18 apply, so the CPT-versus-SPT data
+grid collapses there to one "field data" option plus the laboratory dimensions.
+
+Every weight row carries two columns — homogeneous and heterogeneous. The
+heterogeneous column mirrors the homogeneous one until the respondent edits it.
+
+The questionnaire is **48 weight sets**, up from 9. Two consequences:
+
+- `firestore.rules` caps `responses.size()` at 200 (was 100). Redeploy the
+  rules, or every save fails once a respondent gets past the old limit.
+- Expect respondents to answer across several sittings. The autosave and
+  resume-anywhere behaviour is now load-bearing rather than a convenience.
+
+Documents written against the v1 schema use different set ids. They are ignored
+on restore rather than mangled, and `export_responses.js` labels them by
+`schema_version` so old and new rows are never averaged together by accident.

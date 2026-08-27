@@ -92,58 +92,77 @@
       <figure class="tree-figure">
         <!-- Filename is case-sensitive once deployed (Linux), even though macOS
              treats it as case-insensitive locally. Must match the file exactly. -->
-        <img src="Logic_Tree.png" alt="Four-stage logic tree: fines content classification, susceptibility (S-CBT models), assessment type, cyclic resistance.">
+        <img src="Logic_Tree.png" alt="Three-stage logic tree: susceptibility (S-CBT models), assessment type, cyclic resistance.">
         <figcaption>
-          The logic tree including fines content effects. Stage&nbsp;1 splits the soil unit on fines
-          content; the coarse-grained branch bypasses Stage&nbsp;2 with P[S]&nbsp;=&nbsp;1, while the
-          fine-grained branch passes through the S&#8209;CBT models. You are asked to weight the
-          highlighted stages below.
+          The logic tree. Stage&nbsp;1 passes the soil unit through the S&#8209;CBT susceptibility
+          models; Stage&nbsp;2 splits on P[S] into a liquefaction assessment and a cyclic softening
+          assessment; Stage&nbsp;3 assigns cyclic resistance. You are asked to weight
+          Stages&nbsp;1 and&nbsp;3.
         </figcaption>
       </figure>
 
       <div class="stage-flow">
-        <div class="stage-card">
+        <div class="stage-card stage-active">
           <div class="stage-label">Stage 1</div>
-          <div class="stage-name">Fines Content Classification</div>
-          <div class="stage-note">Split on P[FC &lt; FC<sub>th</sub>]. <strong>Fixed</strong> for this exercise:
-            FC<sub>th</sub> is taken as a single value. Not elicited.</div>
-        </div>
-        <div class="stage-arrow" aria-hidden="true"></div>
-        <div class="stage-card stage-active">
-          <div class="stage-label">Stage 2</div>
           <div class="stage-name">Susceptibility (S&#8209;CBT models)</div>
-          <div class="stage-note">Median and &plusmn;1&sigma; model results. <strong>Elicited</strong> in Section A.</div>
+          <div class="stage-note">Which susceptibility model results you would carry forward, and with
+            what weight. <strong>Elicited</strong> in Section A.</div>
         </div>
         <div class="stage-arrow" aria-hidden="true"></div>
         <div class="stage-card">
-          <div class="stage-label">Stage 3</div>
+          <div class="stage-label">Stage 2</div>
           <div class="stage-name">Assessment Type</div>
-          <div class="stage-note">P[S] vs 1&minus;P[S]. <strong>Fixed</strong> by the S&#8209;CBT model output. Not elicited.</div>
+          <div class="stage-note">P[S] vs 1&minus;P[S]. <strong>Fixed</strong> by the S&#8209;CBT model
+            output. Not elicited.</div>
         </div>
         <div class="stage-arrow" aria-hidden="true"></div>
         <div class="stage-card stage-active">
-          <div class="stage-label">Stage 4</div>
+          <div class="stage-label">Stage 3</div>
           <div class="stage-name">Cyclic Resistance</div>
-          <div class="stage-note">Assessment types per case. <strong>Elicited</strong> in Sections B&ndash;D.</div>
+          <div class="stage-note">Assessment methods, asked separately on each Stage&nbsp;2 branch.
+            <strong>Elicited</strong> in Sections B&ndash;F.</div>
         </div>
       </div>
 
+      <h2>Fines content</h2>
+      <p>
+        Fines content is not a stage of the tree. It is a <strong>condition on the soil unit</strong>:
+        each Stage&nbsp;3 section asks you to answer for one fines-content case, since the methods you
+        would weight most heavily are expected to change with it.
+      </p>
+      <ul class="plain-list">
+        <li><strong>Low fines content</strong> &mdash; FC below about 25%, coarse-grained dominated.</li>
+        <li><strong>Transitional fines content</strong> &mdash; FC roughly 25&ndash;40%, neither
+          behaviour clearly dominates.</li>
+        <li><strong>High fines content</strong> &mdash; FC above about 40%, fine-grained dominated.</li>
+      </ul>
+
+      <h2>The two columns</h2>
+      <p>
+        Every weight table has two columns. Fill the <strong>homogeneous</strong> column first; the
+        <strong>heterogeneous</strong> column copies it as you type and is marked
+        <span class="mirror-flag mirror-inline">copied</span> until you change it. Change it only where
+        your judgment would actually differ &mdash; leaving it copied is a perfectly good answer, and
+        the two are recorded separately so we can tell one from the other.
+      </p>
+      <div class="col-legend" id="column-legend"></div>
+
       <h2>Data availability</h2>
       <p>
-        Weights are expected to depend on what data are available at a site. Each Stage&nbsp;4 case is
-        therefore asked under four scenarios. <strong>Penetration resistance data are assumed available in
-        every scenario</strong>; everything else is optional and accumulates:
+        Weights are expected to depend on what data are available at a site, so each case is asked under
+        several data scenarios:
       </p>
       <ol class="scenario-list" id="scenario-legend"></ol>
 
       <h2>Before you start</h2>
       <ul class="plain-list">
         <li>Answer as general guidance, not for one specific site.</li>
-        <li>Weights within a set must sum to 1.000. The form will tell you where you stand.</li>
+        <li>Each column within a set must sum to 1.000. The form will tell you where you stand.</li>
         <li>The comment box under each set is optional but valuable &mdash; the reasoning behind a weight
           is often more useful to the report than the number itself.</li>
-        <li>Your answers save automatically as you type. The chip at the top right tells you when
-          the last save happened.</li>
+        <li>This is a long exercise. It is meant to be done across several sittings &mdash; your answers
+          save automatically as you type, and the chip at the top right tells you when the last save
+          happened.</li>
         <li>You can stop at any point and come back later — on this computer or another one.
           Sign in with the same account and your answers will be where you left them.</li>
         <li>Only you and the study coordinator can see your responses.</li>

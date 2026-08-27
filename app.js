@@ -1,13 +1,27 @@
 /* ==========================================================================
-   Logic Tree Weight Elicitation
+   Logic Tree Weight Elicitation — v2
    --------------------------------------------------------------------------
-   The whole questionnaire is generated from SCHEMA below. To add, remove or
-   reword a case, a data scenario or a branch, edit SCHEMA only — the rendering,
-   validation, progress tracking and export all follow from it automatically.
+   The whole questionnaire is generated from the schema below. To add, remove
+   or reword a case, a data scenario or a branch, edit the schema only — the
+   rendering, validation, progress tracking and export all follow from it.
 
-   Responses autosave to Firestore when firebase-sync.js is present and the page
-   is served over http(s). Everything still works without it — the download
-   buttons produce the same JSON and CSV either way.
+   v2 changes
+     · The fines-content stage is gone from the tree. The tree is now
+       Stage 1 Susceptibility → Stage 2 Assessment Type → Stage 3 Cyclic
+       Resistance. Fines content moves from a tree stage to a *case condition*
+       inside Stage 3.
+     · Stage 3 is elicited separately on the two Stage-2 branches. On the
+       not-susceptible (cyclic softening) branch only DEA24 and DEA18 apply;
+       the CPT and SPT triggering models are excluded outright.
+     · Every weight row now carries two columns — homogeneous and
+       heterogeneous. The heterogeneous column mirrors the homogeneous one as
+       it is typed and stays mirrored until the respondent edits it. The export
+       records which heterogeneous weights were inherited and which were
+       actually considered.
+
+   Responses autosave to Firestore when firebase-sync.js is present and the
+   page is served over http(s). Everything still works without it — the
+   download buttons produce the same JSON and CSV either way.
    ========================================================================== */
 
 'use strict';
@@ -17,234 +31,382 @@
    -------------------------------------------------------------------------- */
 
 const CONFIG = {
-  version: '1.0',
+  version: '2.0',
   study: 'Cyclic resistance logic tree — weight elicitation',
-  tolerance: 1e-6,        // how close the sum must be to 1.000
+  tolerance: 1e-6,        // how close each column sum must be to 1.000
   returnTo: '',           // optional: email address shown on the review page
   autosaveDelay: 1500     // ms of quiet before a save is sent
 };
 
-/* --------------------------------------------------------------------------
-   DATA AVAILABILITY SCENARIOS
-   Penetration resistance is assumed available in every scenario.
-   Tags drive which branches appear: a branch listing a tag in `requires`
-   is only shown in scenarios that carry that tag.
-   -------------------------------------------------------------------------- */
-
-const SCENARIOS = [
+/* The two stratigraphy columns every weight table carries. */
+const COLUMNS = [
   {
-    id: 'S1',
-    name: 'Penetration resistance only',
-    desc: 'CPT, SPT, Vₛ or DPT profile. No laboratory data.',
-    tags: ['pen']
+    id: 'hom',
+    label: 'Homogeneous',
+    hint: 'A single, uniform unit — the profile supports one assessment.'
   },
   {
-    id: 'S2',
-    name: 'Penetration + index tests',
-    desc: 'Adds Atterberg limits, gradation and fines content on recovered samples.',
-    tags: ['pen', 'index']
-  },
-  {
-    id: 'S3',
-    name: 'Penetration + index + advanced monotonic laboratory tests',
-    desc: 'Adds consolidation and monotonic strength testing (e.g. sᵤ, OCR, state characterisation).',
-    tags: ['pen', 'index', 'lab']
-  },
-  {
-    id: 'S4',
-    name: 'Penetration + index + monotonic + cyclic laboratory tests',
-    desc: 'Full programme, including site-specific cyclic laboratory testing on high-quality samples.',
-    tags: ['pen', 'index', 'lab', 'cyclic']
+    id: 'het',
+    label: 'Heterogeneous',
+    hint: 'Interlayered or transitional unit — the models partly disagree ' +
+          'because the unit is not one material.'
   }
 ];
 
 /* --------------------------------------------------------------------------
-   BRANCH DEFINITIONS (Stage 4 — cyclic resistance assessment types)
+   STAGE 1 — SUSCEPTIBILITY (S-CBT models)
    -------------------------------------------------------------------------- */
 
-const BRANCHES = {
-  empirical: {
-    label: 'Empirical triggering models',
-    desc: 'Penetration- and Vₛ-based case-history correlations (SPT, CPT, Vₛ, DPT).'
+const SUSC_BRANCHES = {
+  cbt_median: {
+    label: 'This study (S-CBT), median',
+    desc: 'Central estimate of the susceptibility–cyclic behaviour type model developed in this study.',
+    requires: ['cpt']
   },
-  labSand: {
-    label: 'Laboratory-based model for sands',
-    desc: "Kristin's model."
+  cbt_plus1: {
+    label: 'This study (S-CBT), +1σ',
+    desc: 'One standard deviation above the median — more soils classified as susceptible.',
+    requires: ['cpt']
   },
-  labFine: {
-    label: 'Laboratory-based models for fine-grained soils',
-    desc: "Ali's model and Varun's model, taken together as one branch."
+  cbt_minus1: {
+    label: 'This study (S-CBT), −1σ',
+    desc: 'One standard deviation below the median — fewer soils classified as susceptible.',
+    requires: ['cpt']
   },
-  softening: {
-    label: 'Cyclic softening models',
-    desc: 'Strength-based cyclic softening procedures for non-susceptible fine-grained soils.'
+  maurer: {
+    label: 'Maurer et al.',
+    desc: 'Penetration-based susceptibility criterion.',
+    requires: ['cpt']
   },
-  cyclicLab: {
-    label: 'Cyclic laboratory tests',
-    desc: 'Site-specific cyclic testing used directly to characterise cyclic resistance.',
+  bi06_det: {
+    label: 'B&I06, deterministic',
+    desc: 'Boulanger & Idriss (2006) plasticity-index criterion, deterministic form.',
+    requires: ['atterberg']
+  },
+  bs06_det: {
+    label: 'B&S06, deterministic',
+    desc: 'Bray & Sancio (2006) criterion on PI and wc/LL, deterministic form.',
+    requires: ['atterberg']
+  },
+  bi06_huang: {
+    label: 'B&I06, Huang recalibration',
+    desc: 'Boulanger & Idriss (2006) criterion in the probabilistic form recalibrated by Huang.',
+    requires: ['atterberg']
+  },
+  bs06_huang: {
+    label: 'B&S06, Huang recalibration',
+    desc: 'Bray & Sancio (2006) criterion in the probabilistic form recalibrated by Huang.',
+    requires: ['atterberg']
+  },
+  susc_cyclic_lab: {
+    label: 'Site-specific cyclic laboratory tests',
+    desc: 'Cyclic testing on high-quality samples used directly to judge susceptibility.',
     requires: ['cyclic']
   }
 };
 
-/* --------------------------------------------------------------------------
-   CASES (Stage 4)
-   -------------------------------------------------------------------------- */
-
-const CASES = [
+const SUSC_SCENARIOS = [
   {
-    id: 'C1',
-    letter: 'B',
-    name: 'Coarse-grained dominated, non-plastic soil',
-    context:
-      'Stage 1 has classified the unit as coarse-grained dominated, so Stage 2 is bypassed and ' +
-      'P[S] = 1 is assigned (CBT = 0.96 median from the sand results). You are weighting the ' +
-      'Stage 4 cyclic resistance assessment types for this branch.',
-    branches: ['empirical', 'labSand', 'cyclicLab'],
-    // Index testing adds nothing for a non-plastic coarse-grained unit, so the
-    // "penetration + index" scenario is not asked for this case.
-    skipScenarios: ['S2']
+    id: 'D1',
+    name: 'CPT only',
+    desc: 'A CPT profile and nothing else. No samples, so no index properties.',
+    tags: ['cpt']
   },
   {
-    id: 'C2',
-    letter: 'C',
-    name: 'Fine-grained dominated, susceptible soil',
-    context:
-      'Stage 1 has classified the unit as fine-grained dominated and the S-CBT models indicate ' +
-      'susceptibility, so the liquefaction assessment branch (P[S]) is followed. You are weighting ' +
-      'the Stage 4 cyclic resistance assessment types on that branch.',
-    branches: ['empirical', 'labFine', 'cyclicLab']
+    id: 'D2',
+    name: 'Atterberg limits only',
+    desc: 'Index testing on recovered samples — PI, LL, water content. No CPT profile.',
+    tags: ['atterberg']
   },
   {
-    id: 'C3',
-    letter: 'D',
-    name: 'Fine-grained dominated, not-susceptible soil',
-    context:
-      'Stage 1 has classified the unit as fine-grained dominated and the S-CBT models indicate the ' +
-      'soil is not susceptible, so the cyclic softening branch (1 − P[S]) is followed. Empirical ' +
-      'triggering correlations are not applicable here.',
-    branches: ['labFine', 'softening', 'cyclicLab']
+    id: 'D3',
+    name: 'CPT + Atterberg limits',
+    desc: 'Both a CPT profile and index testing on samples from the same unit.',
+    tags: ['cpt', 'atterberg']
+  },
+  {
+    id: 'D4',
+    name: 'CPT + Atterberg limits + cyclic laboratory tests',
+    desc: 'Full programme, including site-specific cyclic testing on high-quality samples.',
+    tags: ['cpt', 'atterberg', 'cyclic']
   }
 ];
 
 /* --------------------------------------------------------------------------
-   SECTION A — Susceptibility (Stage 2)
+   STAGE 3 — CYCLIC RESISTANCE
    -------------------------------------------------------------------------- */
 
-const SUSCEPTIBILITY = {
-  id: 'A',
-  letter: 'A',
-  title: 'Susceptibility — S-CBT model results',
-  intro:
-    'At Stage 2 the susceptibility assessment is carried through the logic tree using the median ' +
-    'S-CBT model result together with the +1σ and −1σ results. Assign the weight you would give ' +
-    'to each. You are asked twice: once where the models are the only basis for the assessment, ' +
-    'and once where site-specific cyclic laboratory testing is also available.',
-  branches: {
-    median: { id: 'median', label: 'Median S-CBT model result', desc: 'The central estimate of the S-CBT model.' },
-    plus1:  { id: 'plus1',  label: '+1σ S-CBT model result',    desc: 'One standard deviation above the median (more susceptible).' },
-    minus1: { id: 'minus1', label: '−1σ S-CBT model result',    desc: 'One standard deviation below the median (less susceptible).' },
-    cyclic: { id: 'cyclicLab', label: 'Cyclic laboratory tests', desc: 'Site-specific cyclic testing used directly to judge susceptibility.' }
+const CR_BRANCHES = {
+  bi16: {
+    label: 'B&I — CPT-based triggering',
+    desc: 'Boulanger & Idriss CPT triggering correlation.',
+    requires: ['cpt']
   },
-  conditions: [
-    {
-      id: 'A1',
-      name: 'S-CBT models only',
-      desc: 'No site-specific cyclic laboratory testing. Susceptibility is judged from the model results alone.',
-      branches: ['median', 'plus1', 'minus1']
-    },
-    {
-      id: 'A2',
-      name: 'S-CBT models + cyclic laboratory tests',
-      desc: 'Cyclic laboratory testing on high-quality samples is available and can be used to judge ' +
-            'susceptibility directly, alongside the model results.',
-      branches: ['median', 'plus1', 'minus1', 'cyclic']
-    }
-  ]
+  mea06: {
+    label: 'MEA06 — CPT-based triggering',
+    desc: 'Moss et al. (2006) CPT triggering correlation.',
+    requires: ['cpt']
+  },
+  bi12: {
+    label: 'B&I12 — SPT-based triggering',
+    desc: 'Boulanger & Idriss (2012) SPT triggering correlation.',
+    requires: ['spt']
+  },
+  cea18: {
+    label: 'CEA18 — SPT-based triggering',
+    desc: 'Cetin et al. (2018) SPT triggering correlation.',
+    requires: ['spt']
+  },
+  dea24: {
+    label: 'DEA24 — laboratory-based model for fine-grained soils',
+    desc: 'Cyclic resistance of fine-grained soils from plasticity and stress history.'
+  },
+  dea18: {
+    label: 'DEA18 — cyclic softening model',
+    desc: 'Strength-based cyclic softening procedure.'
+  },
+  cr_cyclic_lab: {
+    label: 'Site-specific cyclic laboratory tests',
+    desc: 'Cyclic testing on high-quality samples used directly to characterise cyclic resistance.',
+    requires: ['cyclic']
+  }
 };
+
+/* Fines-content cases. These are conditions on the soil unit, not tree stages. */
+const FC_CASES = [
+  {
+    id: 'Flow',
+    name: 'Low fines content',
+    short: 'Low FC',
+    desc: 'FC < 25% — coarse-grained dominated behaviour.'
+  },
+  {
+    id: 'Fmid',
+    name: 'Transitional fines content',
+    short: 'Transitional FC',
+    desc: 'FC between 25% and 40% — neither behaviour clearly dominates.'
+  },
+  {
+    id: 'Fhigh',
+    name: 'High fines content',
+    short: 'High FC',
+    desc: 'FC > 40% — fine-grained dominated behaviour.'
+  }
+];
+
+/* Susceptible branch (liquefaction assessment, P[S]). The full data grid:
+   which penetration data are available drives which triggering models appear,
+   and the advanced-laboratory scenarios ask the same rows again on purpose —
+   the question is whether su and OCR shift weight toward the lab-based
+   models, not whether different models become available. */
+const CR_SCENARIOS = [
+  { id: 'E1', name: 'CPT only',                        tags: ['cpt'] },
+  { id: 'E2', name: 'SPT only',                        tags: ['spt'] },
+  { id: 'E3', name: 'CPT + SPT',                       tags: ['cpt', 'spt'] },
+  { id: 'E4', name: 'CPT + advanced laboratory tests', tags: ['cpt', 'lab'] },
+  { id: 'E5', name: 'SPT + advanced laboratory tests', tags: ['spt', 'lab'] },
+  { id: 'E6', name: 'CPT + SPT + advanced laboratory tests', tags: ['cpt', 'spt', 'lab'] }
+];
+
+/* Not-susceptible branch (cyclic softening, 1 − P[S]). No triggering model
+   applies here, so CPT-versus-SPT availability is irrelevant and the grid
+   collapses to one "field data" option plus the laboratory dimensions. */
+const CS_SCENARIOS = [
+  {
+    id: 'G1',
+    name: 'Field data only',
+    desc: 'A penetration profile — CPT, SPT or both — with index properties. No advanced laboratory testing.',
+    tags: ['field']
+  },
+  {
+    id: 'G2',
+    name: 'Field data + advanced laboratory tests',
+    desc: 'Adds consolidation and monotonic strength testing (sᵤ, OCR, state characterisation).',
+    tags: ['field', 'lab']
+  },
+  {
+    id: 'G3',
+    name: 'Field data + cyclic laboratory tests',
+    desc: 'Adds site-specific cyclic testing on high-quality samples, without advanced monotonic testing.',
+    tags: ['field', 'cyclic']
+  },
+  {
+    id: 'G4',
+    name: 'Field data + advanced + cyclic laboratory tests',
+    desc: 'Full programme — monotonic strength testing and site-specific cyclic testing.',
+    tags: ['field', 'lab', 'cyclic']
+  }
+];
+
+/* Branch pools per Stage-2 branch. */
+const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'dea18', 'cr_cyclic_lab'];
+const NOT_SUSCEPTIBLE_POOL = ['dea24', 'dea18', 'cr_cyclic_lab'];
+
+/* The not-susceptible branch is only asked for the fine-grained cases. A
+   low-FC unit judged not susceptible is a null case in practice. */
+const CS_FC_CASES = ['Fmid', 'Fhigh'];
+
+const SUSC_DESC =
+  'The soil unit has been judged susceptible at Stage 2, so the liquefaction ' +
+  'assessment branch, P[S], is followed.';
+const NOTSUSC_DESC =
+  'The soil unit has been judged not susceptible at Stage 2, so the cyclic ' +
+  'softening branch, 1 − P[S], is followed. Penetration-based triggering ' +
+  'correlations do not apply on this branch.';
 
 /* --------------------------------------------------------------------------
    BUILD THE FLAT LIST OF PANELS AND WEIGHT SETS
    -------------------------------------------------------------------------- */
-
-function buildSchema() {
-  const panels = [];
-
-  // Section A — one panel, three weight sets (one per data condition)
-  panels.push({
-    key: 'A',
-    navGroup: 'Stage 2',
-    navLabel: 'A. Susceptibility',
-    eyebrow: 'Section A · Stage 2',
-    title: SUSCEPTIBILITY.title,
-    intro: SUSCEPTIBILITY.intro,
-    note:
-      'These weights describe how much confidence you place in each model result, not how likely ' +
-      'the soil is to be susceptible — that comes from the model itself.',
-    sets: SUSCEPTIBILITY.conditions.map((cond, i) => ({
-      id: 'A.' + cond.id,
-      section: 'A. Susceptibility (Stage 2)',
-      caseName: 'Susceptibility — S-CBT model results',
-      scenarioName: cond.name,
-      title: cond.name,
-      index: i + 1,
-      count: SUSCEPTIBILITY.conditions.length,
-      kicker: 'Case',
-      desc: cond.desc,
-      branches: cond.branches.map(key => {
-        const b = SUSCEPTIBILITY.branches[key];
-        return { id: b.id, label: b.label, desc: b.desc };
-      })
-    }))
-  });
-
-  // Sections B–D — one panel per case, four weight sets (one per data scenario)
-  CASES.forEach(cs => {
-    panels.push({
-      key: cs.id,
-      navGroup: 'Stage 4',
-      navLabel: cs.letter + '. ' + shortCase(cs.name),
-      eyebrow: 'Section ' + cs.letter + ' · Stage 4',
-      title: cs.name,
-      intro: cs.context,
-      note:
-        'Penetration resistance data are available in every scenario below. Weight the assessment ' +
-        'types as you would recommend for guidance, given only the data listed. A weight of 0 is a ' +
-        'valid answer.',
-      sets: SCENARIOS.filter(
-        sc => !(cs.skipScenarios || []).includes(sc.id)
-      ).map((sc, i, arr) => {
-        const branches = cs.branches
-          .filter(bid => availableIn(BRANCHES[bid], sc))
-          .map(bid => ({ id: bid, label: BRANCHES[bid].label, desc: BRANCHES[bid].desc }));
-        return {
-          id: cs.id + '.' + sc.id,
-          section: 'Section ' + cs.letter + ' — ' + cs.name,
-          caseName: cs.name,
-          scenarioName: sc.name,
-          title: sc.name,
-          index: i + 1,
-          count: arr.length,
-          kicker: 'Data scenario',
-          desc: sc.desc,
-          branches: branches
-        };
-      })
-    });
-  });
-
-  return panels;
-}
 
 function availableIn(branch, scenario) {
   if (!branch.requires) return true;
   return branch.requires.every(tag => scenario.tags.indexOf(tag) !== -1);
 }
 
-function shortCase(name) {
-  return name
-    .replace('Coarse-grained dominated, non-plastic soil', 'Coarse-grained')
-    .replace('Fine-grained dominated, susceptible soil', 'Fine-grained, susceptible')
-    .replace('Fine-grained dominated, not-susceptible soil', 'Fine-grained, not susceptible');
+function branchList(pool, defs, scenario) {
+  return pool
+    .filter(id => availableIn(defs[id], scenario))
+    .map(id => ({ id: id, label: defs[id].label, desc: defs[id].desc }));
+}
+
+/* Expand the six base cyclic-resistance scenarios into twelve, by repeating
+   each one with site-specific cyclic testing added. */
+function expandCyclic(scenarios) {
+  const out = [];
+  scenarios.forEach(sc => {
+    out.push({
+      id: sc.id,
+      name: sc.name,
+      desc: describeScenario(sc, false),
+      tags: sc.tags.slice()
+    });
+  });
+  scenarios.forEach(sc => {
+    out.push({
+      id: sc.id + 'c',
+      name: sc.name + ' + cyclic laboratory tests',
+      desc: describeScenario(sc, true),
+      tags: sc.tags.concat(['cyclic'])
+    });
+  });
+  return out;
+}
+
+function describeScenario(sc, withCyclic) {
+  const bits = [];
+  if (sc.tags.indexOf('cpt') !== -1 && sc.tags.indexOf('spt') !== -1) {
+    bits.push('Both CPT and SPT profiles are available for the unit.');
+  } else if (sc.tags.indexOf('cpt') !== -1) {
+    bits.push('A CPT profile is available; no SPT data for this unit.');
+  } else if (sc.tags.indexOf('spt') !== -1) {
+    bits.push('SPT data are available; no CPT profile for this unit.');
+  }
+  if (sc.tags.indexOf('lab') !== -1) {
+    bits.push('Consolidation and monotonic strength testing (sᵤ, OCR) have been carried out.');
+  } else {
+    bits.push('Index properties are known, but there is no advanced monotonic laboratory testing.');
+  }
+  if (withCyclic) {
+    bits.push('Site-specific cyclic testing on high-quality samples is also available.');
+  }
+  return bits.join(' ');
+}
+
+function buildSchema() {
+  const panels = [];
+
+  /* ---- Section A — Stage 1 susceptibility ---- */
+  panels.push({
+    key: 'A',
+    navGroup: 'Stage 1',
+    navLabel: 'A. Susceptibility',
+    eyebrow: 'Section A · Stage 1',
+    title: 'Susceptibility — S-CBT model weights',
+    intro:
+      'At Stage 1 the susceptibility of the unit is assessed with the S-CBT models. Assign the ' +
+      'weight you would give to each model result under each data scenario below.',
+    note:
+      'These weights describe how much confidence you place in each model, <strong>not</strong> how ' +
+      'likely the soil is to be susceptible — that comes from the model output itself.',
+    sets: SUSC_SCENARIOS.map((sc, i, arr) => ({
+      id: 'A.' + sc.id,
+      section: 'A. Susceptibility (Stage 1)',
+      caseName: 'Susceptibility — S-CBT models',
+      scenarioName: sc.name,
+      title: sc.name,
+      index: i + 1,
+      count: arr.length,
+      kicker: 'Data scenario',
+      desc: sc.desc,
+      branches: branchList(Object.keys(SUSC_BRANCHES), SUSC_BRANCHES, sc)
+    }))
+  });
+
+  /* ---- Sections B — Stage 3, susceptible branch, one panel per FC case ---- */
+  const crScenarios = expandCyclic(CR_SCENARIOS);
+  const letters = ['B', 'C', 'D'];
+
+  FC_CASES.forEach((fc, fi) => {
+    panels.push({
+      key: 'S-' + fc.id,
+      navGroup: 'Stage 3 — Liquefaction',
+      navLabel: letters[fi] + '. ' + fc.short,
+      eyebrow: 'Section ' + letters[fi] + ' · Stage 3 · Liquefaction assessment',
+      title: fc.name + ' — susceptible',
+      intro: fc.desc + ' ' + SUSC_DESC + ' Weight the cyclic resistance assessment methods below.',
+      note:
+        'A weight of 0 is a valid answer — it means you would not use that method at all with ' +
+        'the data listed. Fill both columns: the heterogeneous column starts as a copy of the ' +
+        'homogeneous one, so change it only where your judgment would actually differ.',
+      sets: crScenarios.map((sc, i, arr) => ({
+        id: 'S-' + fc.id + '.' + sc.id,
+        section: 'Section ' + letters[fi] + ' — ' + fc.name + ', susceptible',
+        caseName: fc.name + ' — susceptible',
+        fc: fc.id,
+        assessment: 'liquefaction',
+        scenarioName: sc.name,
+        title: sc.name,
+        index: i + 1,
+        count: arr.length,
+        kicker: 'Data scenario',
+        desc: sc.desc,
+        branches: branchList(SUSCEPTIBLE_POOL, CR_BRANCHES, sc)
+      }))
+    });
+  });
+
+  /* ---- Sections E–F — Stage 3, not-susceptible branch ---- */
+  const csLetters = ['E', 'F'];
+  CS_FC_CASES.forEach((fcId, fi) => {
+    const fc = FC_CASES.find(f => f.id === fcId);
+    panels.push({
+      key: 'N-' + fc.id,
+      navGroup: 'Stage 3 — Cyclic softening',
+      navLabel: csLetters[fi] + '. ' + fc.short,
+      eyebrow: 'Section ' + csLetters[fi] + ' · Stage 3 · Cyclic softening',
+      title: fc.name + ' — not susceptible',
+      intro: fc.desc + ' ' + NOTSUSC_DESC,
+      note:
+        'Only the two fine-grained models apply on this branch, plus site-specific cyclic testing ' +
+        'where it is available. Both can be used with field data alone.',
+      sets: CS_SCENARIOS.map((sc, i, arr) => ({
+        id: 'N-' + fc.id + '.' + sc.id,
+        section: 'Section ' + csLetters[fi] + ' — ' + fc.name + ', not susceptible',
+        caseName: fc.name + ' — not susceptible',
+        fc: fc.id,
+        assessment: 'cyclic softening',
+        scenarioName: sc.name,
+        title: sc.name,
+        index: i + 1,
+        count: arr.length,
+        kicker: 'Data scenario',
+        desc: sc.desc,
+        branches: branchList(NOT_SUSCEPTIBLE_POOL, CR_BRANCHES, sc)
+      }))
+    });
+  });
+
+  return panels;
 }
 
 /* --------------------------------------------------------------------------
@@ -256,14 +418,13 @@ const ALL_SETS = PANELS.reduce((acc, p) => acc.concat(p.sets), []);
 
 const state = {
   respondent: { name: '', email: '' },
-  answers: {},          // setId -> { weights: {branchId: string}, comment: string }
+  answers: {},          // setId -> { weights: {branchId: {hom, het, hetEdited}}, comment }
   startedAt: new Date().toISOString(),
-  currentPanel: 0,      // 0 = intro, 1..n = generated, n+1 = review
-  submitted: false,     // set when the respondent marks their answers final
+  currentPanel: 0,
+  submitted: false,
   submittedAt: null
 };
 
-/* Cloud sync bookkeeping (see firebase-sync.js) */
 const sync = {
   timer: null,
   inFlight: false,
@@ -275,7 +436,9 @@ const sync = {
 
 ALL_SETS.forEach(s => {
   state.answers[s.id] = { weights: {}, comment: '' };
-  s.branches.forEach(b => { state.answers[s.id].weights[b.id] = ''; });
+  s.branches.forEach(b => {
+    state.answers[s.id].weights[b.id] = { hom: '', het: '', hetEdited: false };
+  });
 });
 
 /* --------------------------------------------------------------------------
@@ -283,7 +446,6 @@ ALL_SETS.forEach(s => {
    -------------------------------------------------------------------------- */
 
 const $ = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
 
 function el(tag, attrs, children) {
   const node = document.createElement(tag);
@@ -301,15 +463,34 @@ function el(tag, attrs, children) {
 }
 
 /* --------------------------------------------------------------------------
-   RENDER — intro scenario legend
+   RENDER — intro legend
    -------------------------------------------------------------------------- */
 
 function renderScenarioLegend() {
   const ol = $('#scenario-legend');
-  SCENARIOS.forEach(sc => {
+  if (!ol) return;
+  const rows = [
+    ['Stage 1 — susceptibility', SUSC_SCENARIOS.map(s => s.name).join(' · ')],
+    ['Stage 3 — liquefaction branch',
+      CR_SCENARIOS.map(s => s.name).join(' · ') +
+      ' — each also asked with site-specific cyclic laboratory tests added'],
+    ['Stage 3 — cyclic softening branch', CS_SCENARIOS.map(s => s.name).join(' · ')]
+  ];
+  rows.forEach(r => {
     ol.appendChild(el('li', {}, [
-      el('span', { class: 'sc-name', text: sc.name }),
-      el('span', { class: 'sc-desc', text: ' — ' + sc.desc })
+      el('span', { class: 'sc-name', text: r[0] }),
+      el('span', { class: 'sc-desc', text: ' — ' + r[1] })
+    ]));
+  });
+}
+
+function renderColumnLegend() {
+  const box = $('#column-legend');
+  if (!box) return;
+  COLUMNS.forEach(c => {
+    box.appendChild(el('div', { class: 'col-legend-item' }, [
+      el('div', { class: 'col-legend-name', text: c.label }),
+      el('div', { class: 'col-legend-desc', text: c.hint })
     ]));
   });
 }
@@ -321,7 +502,7 @@ function renderScenarioLegend() {
 function renderPanels() {
   const host = $('#generated');
 
-  PANELS.forEach((panel, idx) => {
+  PANELS.forEach(panel => {
     const sec = el('section', { class: 'panel', id: 'panel-' + panel.key, hidden: 'hidden' });
     sec.setAttribute('data-panel', panel.key);
 
@@ -360,54 +541,77 @@ function renderSet(set) {
 function buildSetBody(set) {
   const wrap = el('div');
 
-  const table = el('table', { class: 'wtable' });
-  const thead = el('thead', {}, [
+  const table = el('table', { class: 'wtable wtable-2col' });
+  table.appendChild(el('thead', {}, [
     el('tr', {}, [
-      el('th', { text: 'Branch' }),
-      el('th', { class: 'num', text: 'Weight' })
+      el('th', { text: 'Assessment method' }),
+      el('th', { class: 'num', text: COLUMNS[0].label }),
+      el('th', { class: 'num', text: COLUMNS[1].label })
     ])
-  ]);
-  table.appendChild(thead);
+  ]));
 
   const tbody = el('tbody');
   set.branches.forEach(b => {
-    const input = el('input', {
-      type: 'number', class: 'w-input', min: '0', max: '1', step: '0.05',
-      'data-set': set.id, 'data-branch': b.id,
-      'aria-label': b.label + ' weight'
+    const cells = COLUMNS.map(col => {
+      const input = el('input', {
+        type: 'number', class: 'w-input w-' + col.id, min: '0', max: '1', step: '0.05',
+        'data-set': set.id, 'data-branch': b.id, 'data-col': col.id,
+        'aria-label': b.label + ' — ' + col.label + ' weight'
+      });
+      input.addEventListener('input', onWeightInput);
+      const cell = el('td', { class: 'num' }, [input]);
+      if (col.id === 'het') {
+        cell.appendChild(el('span', {
+          class: 'mirror-flag', id: 'mirror-' + set.id + '-' + b.id,
+          title: 'Copied from the homogeneous column', text: 'copied'
+        }));
+      }
+      return cell;
     });
-    input.addEventListener('input', onWeightInput);
 
     tbody.appendChild(el('tr', {}, [
       el('td', {}, [
         el('div', { class: 'branch-label', text: b.label }),
         b.desc ? el('div', { class: 'branch-desc', text: b.desc }) : null
-      ]),
-      el('td', { class: 'num' }, [input])
-    ]));
+      ])
+    ].concat(cells)));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
 
-  wrap.appendChild(el('div', { class: 'wtotal is-empty', id: 'total-' + set.id }, [
-    el('div', { class: 'wtotal-tools' }, [
+  /* One total bar per column. */
+  const totals = el('div', { class: 'wtotals' });
+  COLUMNS.forEach(col => {
+    const tools = [
       el('button', {
-        type: 'button', class: 'btn btn-ghost btn-sm', text: 'Equal weights',
-        onclick: () => fillEqual(set.id)
+        type: 'button', class: 'btn btn-ghost btn-sm', text: 'Equal',
+        onclick: () => fillEqual(set.id, col.id)
       }),
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: 'Normalise',
-        onclick: () => normalise(set.id)
+        onclick: () => normalise(set.id, col.id)
       }),
       el('button', {
         type: 'button', class: 'btn btn-ghost btn-sm', text: 'Clear',
-        onclick: () => clearSet(set.id)
+        onclick: () => clearSet(set.id, col.id)
       })
-    ]),
-    el('span', { class: 'wtotal-msg', id: 'msg-' + set.id, text: 'No weights entered yet' }),
-    el('span', { class: 'wtotal-label', text: 'Sum' }),
-    el('span', { class: 'wtotal-value', id: 'val-' + set.id, text: '—' })
-  ]));
+    ];
+    if (col.id === 'het') {
+      tools.push(el('button', {
+        type: 'button', class: 'btn btn-ghost btn-sm', text: 'Mirror homogeneous',
+        onclick: () => remirror(set.id)
+      }));
+    }
+
+    totals.appendChild(el('div', { class: 'wtotal is-empty', id: 'total-' + set.id + '-' + col.id }, [
+      el('span', { class: 'wtotal-col', text: col.label }),
+      el('div', { class: 'wtotal-tools' }, tools),
+      el('span', { class: 'wtotal-msg', id: 'msg-' + set.id + '-' + col.id, text: 'No weights entered yet' }),
+      el('span', { class: 'wtotal-label', text: 'Sum' }),
+      el('span', { class: 'wtotal-value', id: 'val-' + set.id + '-' + col.id, text: '—' })
+    ]));
+  });
+  wrap.appendChild(totals);
 
   const ta = el('textarea', {
     id: 'comment-' + set.id,
@@ -430,112 +634,170 @@ function buildSetBody(set) {
    WEIGHT INPUT HANDLING
    -------------------------------------------------------------------------- */
 
+/* Typing in the homogeneous column drags the heterogeneous one along with it,
+   until the respondent touches the heterogeneous cell. From then on that cell
+   is theirs and is never overwritten silently — "Mirror homogeneous" is the
+   only way back, and it is an explicit button press. */
 function onWeightInput(e) {
   const setId = e.target.getAttribute('data-set');
   const branchId = e.target.getAttribute('data-branch');
-  state.answers[setId].weights[branchId] = e.target.value;
-  e.target.classList.toggle('is-zero', parseFloat(e.target.value) === 0);
+  const col = e.target.getAttribute('data-col');
+  const cell = state.answers[setId].weights[branchId];
+
+  if (col === 'hom') {
+    cell.hom = e.target.value;
+    if (!cell.hetEdited) writeCell(setId, branchId, 'het', e.target.value);
+  } else {
+    cell.het = e.target.value;
+    cell.hetEdited = true;
+  }
+
+  paintCell(setId, branchId);
   updateSetStatus(setId);
   markDirty();
 }
 
 function setOf(setId) { return ALL_SETS.find(s => s.id === setId); }
 
-function sumOf(setId) {
+function cellOf(setId, branchId) { return state.answers[setId].weights[branchId]; }
+
+function sumOf(setId, col) {
   const w = state.answers[setId].weights;
-  return Object.keys(w).reduce((t, k) => t + (parseFloat(w[k]) || 0), 0);
+  return Object.keys(w).reduce((t, k) => t + (parseFloat(w[k][col]) || 0), 0);
 }
 
-function filledCount(setId) {
+function filledCount(setId, col) {
   const w = state.answers[setId].weights;
-  return Object.keys(w).filter(k => w[k] !== '' && w[k] !== null).length;
+  return Object.keys(w).filter(k => w[k][col] !== '' && w[k][col] !== null).length;
 }
 
-function setStatus(setId) {
+function colStatus(setId, col) {
   const set = setOf(setId);
-  const filled = filledCount(setId);
+  const filled = filledCount(setId, col);
   if (filled === 0) return 'empty';
   if (filled < set.branches.length) return 'partial';
-  return Math.abs(sumOf(setId) - 1) <= CONFIG.tolerance ? 'complete' : 'off';
+  return Math.abs(sumOf(setId, col) - 1) <= CONFIG.tolerance ? 'complete' : 'off';
+}
+
+/* A set counts as done only when both columns are done. */
+function setStatus(setId) {
+  const s = COLUMNS.map(c => colStatus(setId, c.id));
+  if (s.every(x => x === 'empty')) return 'empty';
+  if (s.every(x => x === 'complete')) return 'complete';
+  return 'partial';
+}
+
+function writeCell(setId, branchId, col, value) {
+  state.answers[setId].weights[branchId][col] = value;
+  const input = document.querySelector(
+    '.w-input[data-set="' + setId + '"][data-branch="' + branchId + '"][data-col="' + col + '"]'
+  );
+  if (input) input.value = value;
+}
+
+function paintCell(setId, branchId) {
+  const cell = cellOf(setId, branchId);
+  COLUMNS.forEach(col => {
+    const input = document.querySelector(
+      '.w-input[data-set="' + setId + '"][data-branch="' + branchId + '"][data-col="' + col.id + '"]'
+    );
+    if (input) input.classList.toggle('is-zero', parseFloat(cell[col.id]) === 0);
+  });
+  const flag = document.getElementById('mirror-' + setId + '-' + branchId);
+  if (flag) flag.hidden = cell.hetEdited || cell.het === '';
 }
 
 function updateSetStatus(setId) {
-  const box = document.getElementById('total-' + setId);
-  const val = document.getElementById('val-' + setId);
-  const msg = document.getElementById('msg-' + setId);
-  if (!box) return;
+  COLUMNS.forEach(col => {
+    const box = document.getElementById('total-' + setId + '-' + col.id);
+    const val = document.getElementById('val-' + setId + '-' + col.id);
+    const msg = document.getElementById('msg-' + setId + '-' + col.id);
+    if (!box) return;
 
-  const status = setStatus(setId);
-  const sum = sumOf(setId);
+    const status = colStatus(setId, col.id);
+    const sum = sumOf(setId, col.id);
+    box.classList.remove('is-ok', 'is-off', 'is-empty');
 
-  box.classList.remove('is-ok', 'is-off', 'is-empty');
+    if (status === 'empty') {
+      box.classList.add('is-empty');
+      val.textContent = '—';
+      msg.textContent = 'No weights entered yet';
+      return;
+    }
 
-  if (status === 'empty') {
-    box.classList.add('is-empty');
-    val.textContent = '—';
-    msg.textContent = 'No weights entered yet';
-  } else if (status === 'complete') {
-    box.classList.add('is-ok');
     val.textContent = sum.toFixed(3);
-    msg.textContent = 'Sums to 1.000';
-  } else {
+
+    if (status === 'complete') {
+      box.classList.add('is-ok');
+      msg.textContent = 'Sums to 1.000';
+      return;
+    }
+
     box.classList.add('is-off');
-    val.textContent = sum.toFixed(3);
-    const missing = setOf(setId).branches.length - filledCount(setId);
+    const missing = setOf(setId).branches.length - filledCount(setId, col.id);
     if (status === 'partial' && Math.abs(sum - 1) <= CONFIG.tolerance) {
-      msg.textContent = missing + ' branch' + (missing === 1 ? '' : 'es') +
+      msg.textContent = missing + ' row' + (missing === 1 ? '' : 's') +
         ' still blank — enter 0 if you would not use it';
     } else if (status === 'partial') {
-      msg.textContent = missing + ' branch' + (missing === 1 ? '' : 'es') + ' blank; ' +
+      msg.textContent = missing + ' row' + (missing === 1 ? '' : 's') + ' blank; ' +
         (sum > 1 ? 'over' : 'under') + ' by ' + Math.abs(sum - 1).toFixed(3);
     } else {
       msg.textContent = (sum > 1 ? 'Over' : 'Under') + ' by ' + Math.abs(sum - 1).toFixed(3);
     }
-  }
+  });
 }
 
-function writeWeight(setId, branchId, value) {
-  state.answers[setId].weights[branchId] = value;
-  const input = document.querySelector(
-    '.w-input[data-set="' + setId + '"][data-branch="' + branchId + '"]'
-  );
-  if (input) {
-    input.value = value;
-    input.classList.toggle('is-zero', parseFloat(value) === 0);
-  }
-}
-
-function fillEqual(setId) {
-  const branches = setOf(setId).branches;
-  const n = branches.length;
-  const base = Math.floor((1 / n) * 1000) / 1000;
-  let remainder = Math.round((1 - base * n) * 1000) / 1000;
-  branches.forEach((b, i) => {
-    let v = base;
-    if (i === 0) v = Math.round((base + remainder) * 1000) / 1000;
-    writeWeight(setId, b.id, v.toFixed(3));
+/* The column tools. Each acts on one column only; using them on the
+   homogeneous column drags any still-mirrored heterogeneous cells with it,
+   exactly as typing does. */
+function applyToColumn(setId, col, values) {
+  setOf(setId).branches.forEach((b, i) => {
+    const v = values[i];
+    writeCell(setId, b.id, col, v);
+    const cell = cellOf(setId, b.id);
+    if (col === 'hom' && !cell.hetEdited) writeCell(setId, b.id, 'het', v);
+    if (col === 'het') cell.hetEdited = (v !== '');
+    paintCell(setId, b.id);
   });
   updateSetStatus(setId);
   markDirty();
 }
 
-function normalise(setId) {
-  const total = sumOf(setId);
+function fillEqual(setId, col) {
+  const branches = setOf(setId).branches;
+  const n = branches.length;
+  const base = Math.floor((1 / n) * 1000) / 1000;
+  const remainder = Math.round((1 - base * n) * 1000) / 1000;
+  const values = branches.map((b, i) =>
+    (i === 0 ? Math.round((base + remainder) * 1000) / 1000 : base).toFixed(3));
+  applyToColumn(setId, col, values);
+}
+
+function normalise(setId, col) {
+  const total = sumOf(setId, col);
   if (total <= 0) return;
   const branches = setOf(setId).branches;
-  const raw = branches.map(b => (parseFloat(state.answers[setId].weights[b.id]) || 0) / total);
-  const rounded = raw.map(v => Math.round(v * 1000) / 1000);
+  const rounded = branches.map(b =>
+    Math.round(((parseFloat(cellOf(setId, b.id)[col]) || 0) / total) * 1000) / 1000);
   const drift = Math.round((1 - rounded.reduce((a, b) => a + b, 0)) * 1000) / 1000;
   let maxIdx = 0;
   rounded.forEach((v, i) => { if (v > rounded[maxIdx]) maxIdx = i; });
   rounded[maxIdx] = Math.round((rounded[maxIdx] + drift) * 1000) / 1000;
-  branches.forEach((b, i) => writeWeight(setId, b.id, rounded[i].toFixed(3)));
-  updateSetStatus(setId);
-  markDirty();
+  applyToColumn(setId, col, rounded.map(v => v.toFixed(3)));
 }
 
-function clearSet(setId) {
-  setOf(setId).branches.forEach(b => writeWeight(setId, b.id, ''));
+function clearSet(setId, col) {
+  applyToColumn(setId, col, setOf(setId).branches.map(() => ''));
+}
+
+/* Put the heterogeneous column back under the homogeneous column's control. */
+function remirror(setId) {
+  setOf(setId).branches.forEach(b => {
+    const cell = cellOf(setId, b.id);
+    cell.hetEdited = false;
+    writeCell(setId, b.id, 'het', cell.hom);
+    paintCell(setId, b.id);
+  });
   updateSetStatus(setId);
   markDirty();
 }
@@ -569,27 +831,22 @@ function renderNav() {
   list.innerHTML = '';
   const order = panelOrder();
 
-  const addItem = (label, index, cls, statusCls) => {
-    const li = el('li');
+  const addItem = (label, index, statusCls) => {
     const btn = el('button', {
       type: 'button',
-      class: 'nav-item ' + (cls || '') + ' ' + (statusCls || ''),
+      class: 'nav-item ' + (statusCls || ''),
       onclick: () => showPanel(index)
     });
     if (index === state.currentPanel) btn.classList.add('is-current');
     btn.appendChild(el('span', { class: 'nav-dot' }));
     btn.appendChild(el('span', { text: label }));
-    li.appendChild(btn);
-    list.appendChild(li);
+    list.appendChild(el('li', {}, [btn]));
   };
 
-  const addGroup = label => {
-    const li = el('li');
-    li.appendChild(el('div', { class: 'nav-item is-group', text: label }));
-    list.appendChild(li);
-  };
+  const addGroup = label =>
+    list.appendChild(el('li', {}, [el('div', { class: 'nav-item is-group', text: label })]));
 
-  addItem('Introduction', 0, '', state.respondent.name ? 'is-done' : '');
+  addItem('Introduction', 0, state.respondent.name ? 'is-done' : '');
 
   let lastGroup = null;
   PANELS.forEach((p, i) => {
@@ -597,11 +854,11 @@ function renderNav() {
     const statuses = p.sets.map(s => setStatus(s.id));
     const allDone = statuses.every(s => s === 'complete');
     const anyStarted = statuses.some(s => s !== 'empty');
-    addItem(p.navLabel, i + 1, '', allDone ? 'is-done' : (anyStarted ? 'is-partial' : ''));
+    addItem(p.navLabel, i + 1, allDone ? 'is-done' : (anyStarted ? 'is-partial' : ''));
   });
 
   addGroup('Finish');
-  addItem('Review and submit', order.length - 1, '', '');
+  addItem('Review and submit', order.length - 1, '');
 }
 
 function updateProgress() {
@@ -643,15 +900,16 @@ function renderReview() {
     text: incomplete.length
       ? incomplete.length + ' of ' + ALL_SETS.length + ' weight sets are incomplete. ' +
         'You can still download what you have, but please note the gaps when you send it back.'
-      : 'All ' + ALL_SETS.length + ' weight sets are complete and sum to 1.000.'
+      : 'All ' + ALL_SETS.length + ' weight sets are complete and both columns sum to 1.000.'
   }));
   status.appendChild(banner);
 
   const table = el('table', { class: 'review-table' });
   table.appendChild(el('thead', {}, [
     el('tr', {}, [
-      el('th', { text: 'Branch' }),
-      el('th', { class: 'num', text: 'Weight' })
+      el('th', { text: 'Assessment method' }),
+      el('th', { class: 'num', text: 'Homogeneous' }),
+      el('th', { class: 'num', text: 'Heterogeneous' })
     ])
   ]));
   const tbody = el('tbody');
@@ -659,27 +917,28 @@ function renderReview() {
   PANELS.forEach(panel => {
     panel.sets.forEach(set => {
       const st = setStatus(set.id);
-      const head = el('tr', { class: 'review-group' }, [
-        el('td', { colspan: '2' }, [
+      tbody.appendChild(el('tr', { class: 'review-group' }, [
+        el('td', { colspan: '3' }, [
           el('span', { text: panel.navLabel + ' — ' + set.title }),
           st !== 'complete'
             ? el('span', { class: 'review-flag', text: '   ▲ ' + (st === 'empty' ? 'not started' : 'incomplete') })
             : null
         ])
-      ]);
-      tbody.appendChild(head);
+      ]));
 
       set.branches.forEach(b => {
-        const v = state.answers[set.id].weights[b.id];
+        const cell = cellOf(set.id, b.id);
+        const fmt = v => (v === '' || v === null ? '—' : (parseFloat(v) || 0).toFixed(3));
         tbody.appendChild(el('tr', {}, [
           el('td', { text: b.label }),
-          el('td', { class: 'num', text: v === '' ? '—' : (parseFloat(v) || 0).toFixed(3) })
+          el('td', { class: 'num', text: fmt(cell.hom) }),
+          el('td', { class: 'num' + (cell.hetEdited ? '' : ' is-inherited'), text: fmt(cell.het) })
         ]));
       });
 
       if (state.answers[set.id].comment) {
         tbody.appendChild(el('tr', {}, [
-          el('td', { colspan: '2' }, [
+          el('td', { colspan: '3' }, [
             el('em', { text: '“' + state.answers[set.id].comment + '”' })
           ])
         ]));
@@ -707,6 +966,8 @@ function renderReview() {
    EXPORT
    -------------------------------------------------------------------------- */
 
+function num(v) { return (v === '' || v === null || v === undefined) ? null : Number(v); }
+
 function collectPayload() {
   return {
     schemaVersion: CONFIG.version,
@@ -721,21 +982,29 @@ function collectPayload() {
       setId: set.id,
       section: set.section,
       case: set.caseName,
+      fc: set.fc || '',
+      assessment: set.assessment || 'susceptibility',
       scenario: set.scenarioName,
       status: setStatus(set.id),
-      sum: Number(sumOf(set.id).toFixed(6)),
+      sumHomogeneous: Number(sumOf(set.id, 'hom').toFixed(6)),
+      sumHeterogeneous: Number(sumOf(set.id, 'het').toFixed(6)),
       comment: state.answers[set.id].comment,
-      weights: set.branches.map(b => ({
-        branchId: b.id,
-        branch: b.label,
-        weight: state.answers[set.id].weights[b.id] === ''
-          ? null
-          : Number(state.answers[set.id].weights[b.id])
-      }))
+      weights: set.branches.map(b => {
+        const cell = cellOf(set.id, b.id);
+        return {
+          branchId: b.id,
+          branch: b.label,
+          homogeneous: num(cell.hom),
+          heterogeneous: num(cell.het),
+          heterogeneousInherited: !cell.hetEdited
+        };
+      })
     }))
   };
 }
 
+/* Long format — one row per respondent × set × branch × stratigraphy column,
+   which is what you want for pivoting or reading into R/pandas. */
 function toCSV(payload) {
   const esc = v => {
     const s = (v === null || v === undefined) ? '' : String(v);
@@ -743,7 +1012,8 @@ function toCSV(payload) {
   };
   const rows = [[
     'respondent_name', 'respondent_email',
-    'set_id', 'section', 'case', 'scenario', 'branch_id', 'branch', 'weight',
+    'set_id', 'section', 'case', 'fines_content', 'assessment', 'scenario',
+    'branch_id', 'branch', 'stratigraphy', 'weight', 'inherited',
     'set_sum', 'set_status', 'comment', 'completed_at'
   ]];
   const r = payload.respondent;
@@ -751,9 +1021,16 @@ function toCSV(payload) {
     res.weights.forEach(w => {
       rows.push([
         r.name, r.email || '',
-        res.setId, res.section, res.case, res.scenario,
-        w.branchId, w.branch, w.weight === null ? '' : w.weight,
-        res.sum, res.status, res.comment, payload.completedAt
+        res.setId, res.section, res.case, res.fc, res.assessment, res.scenario,
+        w.branchId, w.branch, 'homogeneous', w.homogeneous === null ? '' : w.homogeneous, 'no',
+        res.sumHomogeneous, res.status, res.comment, payload.completedAt
+      ]);
+      rows.push([
+        r.name, r.email || '',
+        res.setId, res.section, res.case, res.fc, res.assessment, res.scenario,
+        w.branchId, w.branch, 'heterogeneous', w.heterogeneous === null ? '' : w.heterogeneous,
+        w.heterogeneousInherited ? 'yes' : 'no',
+        res.sumHeterogeneous, res.status, res.comment, payload.completedAt
       ]);
     });
   });
@@ -780,8 +1057,6 @@ function safeName() {
    CLOUD SYNC
    -------------------------------------------------------------------------- */
 
-/* The sign-in gate. Shown until authentication completes; hidden entirely when
-   Firebase is not available at all, so the questionnaire still opens offline. */
 function renderGate() {
   const gate = $('#gate');
   const layout = $('#layout');
@@ -807,9 +1082,6 @@ function renderGate() {
   if (acct) $('#account-email').textContent = acct.email || acct.name || '';
 }
 
-/* Auth failures are opaque by default. These are the two that actually happen,
-   and the fix for each is a console setting rather than anything the
-   respondent can do — so say so plainly. */
 function friendlyAuthError(msg) {
   if (/unauthorized-domain/.test(msg)) {
     return 'This site\'s address is not authorised for sign-in yet. Please let the study ' +
@@ -826,9 +1098,6 @@ function syncAvailable() {
   return !!(window.LTSync && window.LTSync.save && window.LTSync.status === 'ready');
 }
 
-/* Called after any change the respondent makes. Updates the UI immediately and
-   queues a save for CONFIG.autosaveDelay ms later; further edits push the save
-   back, so a burst of typing produces one write rather than dozens. */
 function markDirty() {
   updateProgress();
   if (sync.restoring) return;
@@ -857,7 +1126,6 @@ async function flushSave() {
   } finally {
     sync.inFlight = false;
     renderSyncStatus();
-    // An edit landed while the write was in flight — save again.
     if (sync.pending) {
       clearTimeout(sync.timer);
       sync.timer = setTimeout(flushSave, 300);
@@ -865,12 +1133,12 @@ async function flushSave() {
   }
 }
 
-/* Pull an existing document for this browser's anonymous user and refill the
-   form. Runs once, as soon as authentication completes. */
+/* Pull an existing document for this account and refill the form. Records
+   written against the v1 schema use different set ids and are skipped
+   silently — the guards below make that safe rather than fatal. */
 async function restoreFromCloud() {
   if (!window.LTSync || !window.LTSync.load) return;
 
-  // Seed from the signed-in account, so nobody retypes what Google already knows.
   const acct = window.LTSync.user;
   if (acct) {
     state.respondent.email = acct.email || '';
@@ -901,9 +1169,15 @@ async function restoreFromCloud() {
     const set = setOf(res.setId);
     if (!set) return;   // schema changed since the record was written
     (res.weights || []).forEach(w => {
-      if (w.weight === null || w.weight === undefined) return;
       if (!set.branches.some(b => b.id === w.branchId)) return;
-      writeWeight(res.setId, w.branchId, String(w.weight));
+      const cell = cellOf(res.setId, w.branchId);
+      // v1 records carried a single `weight`; treat it as the homogeneous value.
+      const hom = (w.homogeneous !== undefined) ? w.homogeneous : w.weight;
+      const het = (w.heterogeneous !== undefined) ? w.heterogeneous : hom;
+      if (hom !== null && hom !== undefined) writeCell(res.setId, w.branchId, 'hom', String(hom));
+      if (het !== null && het !== undefined) writeCell(res.setId, w.branchId, 'het', String(het));
+      cell.hetEdited = (w.heterogeneousInherited === false);
+      paintCell(res.setId, w.branchId);
     });
     state.answers[res.setId].comment = res.comment || '';
     const ta = document.getElementById('comment-' + res.setId);
@@ -919,8 +1193,6 @@ async function restoreFromCloud() {
   if (state.currentPanel === panelOrder().length - 1) renderReview();
 }
 
-/* The chip in the top bar. This is the respondent's only signal that their work
-   is safe, so it says what is actually true rather than a permanent "Saved". */
 function renderSyncStatus() {
   const chip = $('#sync-chip');
   if (!chip) return;
@@ -943,9 +1215,7 @@ function renderSyncStatus() {
   } else if (s === 'connecting' || s === 'signed-out') {
     chip.textContent = 'Connecting…';
     chip.classList.add('chip-muted');
-  } else if (sync.inFlight) {
-    chip.textContent = 'Saving…';
-  } else if (sync.pending) {
+  } else if (sync.inFlight || sync.pending) {
     chip.textContent = 'Saving…';
   } else if (sync.lastSavedAt) {
     chip.textContent = 'Saved ' + sync.lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -957,9 +1227,6 @@ function renderSyncStatus() {
   }
 }
 
-/* Review page: mark the response final. Not a gate — it just records that the
-   respondent considers themselves done, so Arda can tell drafts from finished
-   answers without chasing anyone. */
 async function markFinal() {
   const btn = $('#btn-submit-online');
   state.submitted = true;
@@ -985,15 +1252,17 @@ async function markFinal() {
    INIT
    -------------------------------------------------------------------------- */
 
-function bindRespondentFields() {
+function init() {
+  renderScenarioLegend();
+  renderColumnLegend();
+  renderPanels();
+
   $('#r-name').addEventListener('input', e => {
     state.respondent.name = e.target.value;
     renderNav();
     markDirty();
   });
-}
 
-function bindNavButtons() {
   document.addEventListener('click', e => {
     const btn = e.target.closest('[data-goto]');
     if (!btn) return;
@@ -1001,13 +1270,6 @@ function bindNavButtons() {
     if (dir === 'next') showPanel(state.currentPanel + 1);
     else if (dir === 'prev') showPanel(state.currentPanel - 1);
   });
-}
-
-function init() {
-  renderScenarioLegend();
-  renderPanels();
-  bindRespondentFields();
-  bindNavButtons();
 
   $('#btn-export-json').addEventListener('click', () => {
     download(safeName() + '.json', JSON.stringify(collectPayload(), null, 2), 'application/json');
@@ -1017,8 +1279,6 @@ function init() {
   });
   $('#btn-submit-online').addEventListener('click', markFinal);
 
-  // Cloud sync, if firebase-sync.js loaded. It is a module, so it may finish
-  // after this classic script — listen rather than poll.
   $('#btn-signin').addEventListener('click', () => {
     $('#signin-label').textContent = 'Opening Google…';
     window.LTSync.signIn();
@@ -1039,13 +1299,20 @@ function init() {
   renderGate();
   renderSyncStatus();
 
-  // Last-chance flush if the tab closes inside the debounce window.
   window.addEventListener('beforeunload', () => {
     if (sync.pending || sync.inFlight) flushSave();
   });
 
-  ALL_SETS.forEach(s => updateSetStatus(s.id));
+  ALL_SETS.forEach(s => {
+    updateSetStatus(s.id);
+    s.branches.forEach(b => paintCell(s.id, b.id));
+  });
   showPanel(0);
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+/* Exposed for the offline smoke test; harmless in the browser. */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { PANELS, ALL_SETS, buildSchema, CONFIG };
+}

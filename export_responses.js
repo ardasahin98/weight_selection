@@ -15,8 +15,11 @@
      node export_responses.js            # writes all_responses.csv
      node export_responses.js --final    # finished responses only
 
-   The CSV is long format — one row per respondent × weight set × branch —
-   which is what you want for pivoting or reading into R/pandas.
+   The CSV is long format — one row per respondent × weight set × branch ×
+   stratigraphy column — which is what you want for pivoting or reading into
+   R/pandas. Filter on `stratigraphy` to get one case or the other, and on
+   `inherited` to drop heterogeneous weights the respondent never actually
+   changed from the homogeneous value.
    ========================================================================== */
 
 const admin = require('firebase-admin');
@@ -44,17 +47,21 @@ const esc = v => {
   const snap = await db.collection(COLLECTION).get();
 
   const rows = [[
-    'respondent_name', 'uid', 'submitted', 'set_id', 'section', 'case', 'scenario',
-    'branch_id', 'branch', 'weight', 'set_sum', 'set_status', 'comment', 'updated_at'
+    'respondent_name', 'uid', 'submitted', 'schema_version',
+    'set_id', 'section', 'case', 'fines_content', 'assessment', 'scenario',
+    'branch_id', 'branch', 'stratigraphy', 'weight', 'inherited',
+    'set_sum', 'set_status', 'comment', 'updated_at'
   ]];
 
   let people = 0;
   let skipped = 0;
+  let legacy = 0;
 
   snap.forEach(docSnap => {
     const d = docSnap.data();
     if (finalOnly && !d.submitted) { skipped++; return; }
     people++;
+    if (d.schemaVersion && d.schemaVersion !== '2.0') legacy++;
 
     const name = (d.respondent && d.respondent.name) || '(no name)';
     const updated = d.updatedAt && d.updatedAt.toDate
@@ -62,13 +69,28 @@ const esc = v => {
       : '';
 
     (d.responses || []).forEach(res => {
-      (res.weights || []).forEach(w => {
+      const push = (strat, weight, inherited, sum) => {
         rows.push([
-          name, docSnap.id, d.submitted ? 'yes' : 'no',
-          res.setId, res.section, res.case, res.scenario,
-          w.branchId, w.branch, w.weight === null ? '' : w.weight,
-          res.sum, res.status, res.comment, updated
+          name, docSnap.id, d.submitted ? 'yes' : 'no', d.schemaVersion || '1.0',
+          res.setId, res.section, res.case, res.fc || '', res.assessment || '', res.scenario,
+          res.__bid, res.__blabel, strat, weight === null || weight === undefined ? '' : weight,
+          inherited, sum === undefined ? '' : sum,
+          res.status, res.comment, updated
         ]);
+      };
+
+      (res.weights || []).forEach(w => {
+        res.__bid = w.branchId;
+        res.__blabel = w.branch;
+
+        // v1 records carried a single `weight` and no stratigraphy columns.
+        if (w.homogeneous === undefined && w.heterogeneous === undefined) {
+          push('', w.weight, '', res.sum);
+          return;
+        }
+        push('homogeneous', w.homogeneous, 'no', res.sumHomogeneous);
+        push('heterogeneous', w.heterogeneous,
+             w.heterogeneousInherited ? 'yes' : 'no', res.sumHeterogeneous);
       });
     });
   });
@@ -78,6 +100,7 @@ const esc = v => {
 
   console.log('Wrote ' + out + ' — ' + people + ' respondent(s), ' + (rows.length - 1) + ' rows.');
   if (skipped) console.log(skipped + ' draft response(s) skipped (--final).');
+  if (legacy) console.log(legacy + ' response(s) written against an older schema version.');
 })().catch(err => {
   console.error(err);
   process.exit(1);

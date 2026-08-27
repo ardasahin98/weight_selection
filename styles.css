@@ -439,3 +439,67 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 }
 .field-hint { font-size: .76rem; color: var(--ink-mute); }
 .field-hint[hidden] { display: none; }
+
+/* ==========================================================================
+   v2 — paired homogeneous / heterogeneous weight columns
+   ========================================================================== */
+
+.wtable-2col th.num,
+.wtable-2col td.num { width: 132px; }
+
+.wtable-2col td.num { position: relative; white-space: nowrap; }
+
+/* The "copied" marker under a heterogeneous cell that is still mirroring the
+   homogeneous one. It disappears the moment the respondent types in the cell,
+   which is the only signal they get that the value is now theirs. */
+.mirror-flag {
+  display: block;
+  font-size: .64rem; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-mute);
+  text-align: right;
+  margin-top: .18rem;
+}
+.mirror-flag[hidden] { display: none; }
+.mirror-inline {
+  display: inline; margin: 0; text-transform: none; letter-spacing: 0;
+  font-size: .74rem;
+  background: var(--paper-alt); border: 1px solid var(--rule);
+  border-radius: 3px; padding: .05rem .3rem;
+}
+
+.w-het { background: var(--paper-alt); }
+.w-het:focus { background: var(--paper); }
+
+/* One total bar per column, stacked. */
+.wtotals { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .5rem; }
+.wtotal { justify-content: flex-start; }
+.wtotal-col {
+  font-weight: 700; font-size: .78rem;
+  text-transform: uppercase; letter-spacing: .07em;
+  min-width: 11ch;
+}
+.wtotal .wtotal-tools { margin-left: 0; }
+
+.col-legend {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: .6rem; margin: .9rem 0 1.2rem;
+}
+.col-legend-item {
+  background: var(--paper-alt);
+  border-radius: var(--radius);
+  padding: .65rem .8rem;
+}
+.col-legend-name { font-weight: 700; font-size: .88rem; margin-bottom: .15rem; }
+.col-legend-desc { font-size: .82rem; color: var(--ink-soft); line-height: 1.45; }
+
+/* Review page: an inherited heterogeneous weight is greyed, so a column the
+   respondent never actually considered does not read as a judgment. */
+.review-table td.is-inherited { color: var(--ink-mute); }
+.review-table td.is-inherited::after { content: ' ·'; }
+
+@media (max-width: 640px) {
+  .wtable-2col th.num, .wtable-2col td.num { width: 96px; }
+  .wtable-2col .branch-desc { display: none; }
+  .wtotal { flex-wrap: wrap; }
+}

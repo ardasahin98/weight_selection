@@ -2,7 +2,7 @@ rules_version = '2';
 
 // Weight elicitation — Firestore security rules
 //
-// One document per respondent, named after their anonymous auth UID.
+// One document per respondent, named after their Google auth UID.
 // A respondent may read and write only their own document, and cannot list
 // the collection, so no one on the panel can see anyone else's weights.
 // You read the results from the Firebase console or with the Admin SDK,
@@ -20,7 +20,9 @@ service cloud.firestore {
                             && request.auth.uid == uid
                             && request.resource.data.uid == uid
                             // Keep a stray client from writing something huge.
-                            && request.resource.data.responses.size() <= 100;
+                            // The v2 schema has 48 weight sets; 200 leaves room
+                            // to grow the questionnaire without a rules deploy.
+                            && request.resource.data.responses.size() <= 200;
 
       // Responses are never deleted by the client, and the collection is
       // never listable. Both are denied by falling through.
