@@ -242,9 +242,8 @@ const CS_SCENARIOS = [
 const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'dea18', 'cr_cyclic_lab'];
 const NOT_SUSCEPTIBLE_POOL = ['dea24', 'dea18', 'cr_cyclic_lab'];
 
-/* The not-susceptible branch is only asked for the fine-grained cases. A
-   low-FC unit judged not susceptible is a null case in practice. */
-const CS_FC_CASES = ['Fmid', 'Fhigh'];
+/* The not-susceptible branch is asked for all three fines-content cases. */
+const CS_FC_CASES = ['Flow', 'Fmid', 'Fhigh'];
 
 const SUSC_DESC =
   'The soil unit has been judged susceptible at Stage 2, so the liquefaction ' +
@@ -376,7 +375,7 @@ function buildSchema() {
   });
 
   /* ---- Sections E–F — Stage 3, not-susceptible branch ---- */
-  const csLetters = ['E', 'F'];
+  const csLetters = ['E', 'F', 'G'];
   CS_FC_CASES.forEach((fcId, fi) => {
     const fc = FC_CASES.find(f => f.id === fcId);
     panels.push({
