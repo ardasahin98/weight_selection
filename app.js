@@ -200,6 +200,10 @@ const CR_BRANCHES = {
     label: 'DEA24 — laboratory-based model for fine-grained soils',
     desc: 'Cyclic resistance of fine-grained soils from plasticity and stress history.'
   },
+  varun: {
+    label: "Varun's model — laboratory-based model for fine-grained soils",
+    desc: 'Laboratory-based cyclic resistance model for fine-grained and transitional soils.'
+  },
   dea18: {
     label: 'DEA18 — cyclic softening model',
     desc: 'Strength-based cyclic softening procedure.'
@@ -280,8 +284,8 @@ const CS_SCENARIOS = [
 /* Branch pools per Stage-2 branch. */
 /* DEA18 is a cyclic softening model and belongs only on the not-susceptible
    branch. It is deliberately absent from the liquefaction pool. */
-const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'cr_cyclic_lab'];
-const NOT_SUSCEPTIBLE_POOL = ['dea24', 'dea18', 'cr_cyclic_lab'];
+const SUSCEPTIBLE_POOL     = ['bi16', 'mea06', 'bi12', 'cea18', 'dea24', 'varun', 'cr_cyclic_lab'];
+const NOT_SUSCEPTIBLE_POOL = ['dea24', 'varun', 'dea18', 'cr_cyclic_lab'];
 
 /* The not-susceptible branch is asked for all three fines-content cases. */
 const CS_FC_CASES = ['Flow', 'Fmid', 'Fhigh'];
